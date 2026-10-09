@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search,
   MapPin,
@@ -12,13 +13,15 @@ import {
   ArrowRight,
   Layers,
   ShoppingBag,
-  Info
+  Info,
+  Phone,
+  MessageCircle,
 } from 'lucide-react';
 import { ActiveTab, SaharanpurLocality } from '../types';
 
 interface HeaderProps {
-  activeTab: ActiveTab;
-  setActiveTab: (tab: ActiveTab) => void;
+  activeTab?: ActiveTab;
+  setActiveTab?: (tab: ActiveTab) => void;
   selectedLocality: SaharanpurLocality;
   onOpenLocationModal: () => void;
   searchQuery: string;
@@ -37,18 +40,42 @@ export const Header: React.FC<HeaderProps> = ({
   onPerformSearch,
   enquiriesCount,
 }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
 
+  const currentPath = location.pathname;
+  const isHome = currentPath === '/';
+  const isProducts = currentPath.startsWith('/products') || currentPath.startsWith('/catalog');
+  const isShops = currentPath === '/shops';
+  const isSeller = currentPath.startsWith('/seller');
+  const isAdmin = currentPath.startsWith('/admin');
+  const isEnquiries = currentPath === '/enquiries';
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onPerformSearch(searchQuery);
+    const q = searchQuery.trim();
+    if (setActiveTab) setActiveTab('catalog');
+    if (q) {
+      navigate(`/products?search=${encodeURIComponent(q)}`);
+    } else {
+      navigate('/products');
+    }
+    onPerformSearch(q);
   };
 
   const getRoleLabel = () => {
-    if (activeTab === 'seller-dashboard') return 'Seller Portal';
-    if (activeTab === 'admin-dashboard') return 'Admin Portal';
+    if (isAdmin) return 'Admin Portal';
+    if (isSeller) return 'Seller Portal';
     return 'Buyer Mode';
+  };
+
+  const handleNav = (path: string, tab?: ActiveTab) => {
+    if (tab && setActiveTab) setActiveTab(tab);
+    navigate(path);
+    setMobileMenuOpen(false);
+    setRoleMenuOpen(false);
   };
 
   return (
@@ -61,23 +88,19 @@ export const Header: React.FC<HeaderProps> = ({
               Saharanpur Special
             </span>
             <span className="truncate">
-              Dukaandar Bhaiyon ke liye sunhara mauka! Register your shop on MattoKart for just{' '}
-              <strong className="underline underline-offset-2">₹199 / Year</strong>.
+              Dukaandar Bhaiyon ke liye sunhara mauka! <strong>Join MattoKart — FREE for Your First Year</strong> (No registration fee. No listing fee).
             </span>
           </div>
 
           <div className="flex items-center gap-4 shrink-0">
             <button
-              onClick={() => {
-                setActiveTab('seller-register');
-                setMobileMenuOpen(false);
-              }}
-              className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold bg-white text-orange-700 px-2.5 py-0.5 rounded-full hover:bg-orange-50 transition-colors shadow-xs"
+              onClick={() => handleNav('/seller/register', 'seller-register')}
+              className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold bg-white text-orange-700 px-2.5 py-0.5 rounded-full hover:bg-orange-50 transition-colors shadow-xs cursor-pointer"
             >
               Register Shop <ArrowRight className="w-3 h-3" />
             </button>
 
-            {/* Quick Mode Toggle for Testing / Evaluation */}
+            {/* Quick Mode Toggle for Navigation */}
             <div className="relative">
               <button
                 onClick={() => setRoleMenuOpen(!roleMenuOpen)}
@@ -97,9 +120,9 @@ export const Header: React.FC<HeaderProps> = ({
                     Switch App View
                   </div>
                   <button
-                    onClick={() => setActiveTab('home')}
-                    className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors ${
-                      activeTab === 'home' || activeTab === 'catalog'
+                    onClick={() => handleNav('/', 'home')}
+                    className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors cursor-pointer ${
+                      isHome || isProducts
                         ? 'bg-orange-600/30 text-orange-300 font-semibold'
                         : 'text-slate-200'
                     }`}
@@ -108,9 +131,9 @@ export const Header: React.FC<HeaderProps> = ({
                     <span>Buyer Marketplace</span>
                   </button>
                   <button
-                    onClick={() => setActiveTab('seller-dashboard')}
-                    className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors ${
-                      activeTab === 'seller-dashboard'
+                    onClick={() => handleNav('/seller/dashboard', 'seller-dashboard')}
+                    className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors cursor-pointer ${
+                      isSeller
                         ? 'bg-amber-600/30 text-amber-300 font-semibold'
                         : 'text-slate-200'
                     }`}
@@ -119,9 +142,9 @@ export const Header: React.FC<HeaderProps> = ({
                     <span>Seller Dashboard</span>
                   </button>
                   <button
-                    onClick={() => setActiveTab('admin-dashboard')}
-                    className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors ${
-                      activeTab === 'admin-dashboard'
+                    onClick={() => handleNav('/admin', 'admin-dashboard')}
+                    className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2 hover:bg-slate-800 transition-colors cursor-pointer ${
+                      isAdmin
                         ? 'bg-emerald-600/30 text-emerald-300 font-semibold'
                         : 'text-slate-200'
                     }`}
@@ -142,7 +165,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Brand Logo & Tagline */}
           <div
             className="flex items-center gap-3 cursor-pointer shrink-0 select-none group"
-            onClick={() => setActiveTab('home')}
+            onClick={() => handleNav('/', 'home')}
           >
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-orange-600 via-orange-500 to-amber-500 text-white flex items-center justify-center font-black text-xl shadow-md shadow-orange-500/30 group-hover:scale-105 transition-transform">
               M
@@ -208,9 +231,9 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="hidden md:flex items-center gap-3 shrink-0">
             {/* My Enquiries */}
             <button
-              onClick={() => setActiveTab('enquiries')}
+              onClick={() => handleNav('/enquiries', 'enquiries')}
               className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === 'enquiries'
+                isEnquiries
                   ? 'bg-orange-50 text-orange-600 border border-orange-200'
                   : 'text-slate-700 hover:bg-slate-100'
               }`}
@@ -227,13 +250,13 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Become a Seller Button */}
             <button
-              onClick={() => setActiveTab('seller-register')}
+              onClick={() => handleNav('/seller/register', 'seller-register')}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition-all shadow-xs cursor-pointer"
             >
               <Store className="w-4 h-4 text-slate-950" />
               <span>Sell on MattoKart</span>
-              <span className="bg-slate-900 text-amber-300 text-[10px] px-1.5 py-0.5 rounded-sm font-mono">
-                ₹199/yr
+              <span className="bg-slate-900 text-amber-300 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold">
+                FREE 1st Yr
               </span>
             </button>
           </div>
@@ -242,14 +265,14 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex md:hidden items-center gap-1">
             <button
               onClick={onOpenLocationModal}
-              className="p-2 text-slate-700 hover:text-orange-600"
+              className="p-2 text-slate-700 hover:text-orange-600 cursor-pointer"
               title="Select Location"
             >
               <MapPin className="w-5 h-5" />
             </button>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-slate-700 hover:text-orange-600"
+              className="p-2 text-slate-700 hover:text-orange-600 cursor-pointer"
               aria-label="Open menu"
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -261,26 +284,26 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="hidden md:flex items-center justify-between pt-2.5 mt-2 border-t border-slate-100 text-xs text-slate-600 font-medium">
           <div className="flex items-center gap-6">
             <button
-              onClick={() => setActiveTab('home')}
+              onClick={() => handleNav('/', 'home')}
               className={`hover:text-orange-600 transition-colors cursor-pointer ${
-                activeTab === 'home' ? 'text-orange-600 font-bold' : ''
+                isHome ? 'text-orange-600 font-bold' : ''
               }`}
             >
               Home
             </button>
             <button
-              onClick={() => setActiveTab('catalog')}
+              onClick={() => handleNav('/products', 'catalog')}
               className={`flex items-center gap-1 hover:text-orange-600 transition-colors cursor-pointer ${
-                activeTab === 'catalog' ? 'text-orange-600 font-bold' : ''
+                isProducts ? 'text-orange-600 font-bold' : ''
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
               <span>All Products & Categories</span>
             </button>
             <button
-              onClick={() => setActiveTab('shops')}
+              onClick={() => handleNav('/shops', 'shops')}
               className={`flex items-center gap-1 hover:text-orange-600 transition-colors cursor-pointer ${
-                activeTab === 'shops' ? 'text-orange-600 font-bold' : ''
+                isShops ? 'text-orange-600 font-bold' : ''
               }`}
             >
               <Store className="w-3.5 h-3.5" />
@@ -288,7 +311,8 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
             <button
               onClick={() => {
-                onPerformSearch('woodcraft');
+                navigate('/products?special=woodcraft');
+                if (setActiveTab) setActiveTab('catalog');
               }}
               className="flex items-center gap-1 text-amber-700 hover:text-amber-800 font-semibold cursor-pointer"
             >
@@ -297,18 +321,28 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          <div className="flex items-center gap-4 text-slate-500">
+          <div className="flex items-center gap-3.5 text-slate-500">
             <button
-              onClick={() => setActiveTab('legal')}
-              className="hover:text-slate-800 transition-colors flex items-center gap-1 cursor-pointer"
+              onClick={() => handleNav('/legal/contact', 'legal')}
+              className="hover:text-orange-600 transition-colors flex items-center gap-1 cursor-pointer font-medium"
             >
-              <Info className="w-3.5 h-3.5" />
-              <span>About & Help</span>
+              <Phone className="w-3.5 h-3.5 text-orange-600" />
+              <span>Contact Us</span>
             </button>
+            <a
+              href="https://wa.me/918221077674"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-emerald-600 transition-colors flex items-center gap-1 font-semibold text-slate-700"
+              title="Official WhatsApp: +91 8221077674"
+            >
+              <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+              <span>+91 8221077674</span>
+            </a>
             <span className="text-slate-300">|</span>
             <span className="text-[11px] text-emerald-800 font-medium flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-700 animate-pulse" />
-              Verified Local Sellers in Saharanpur
+              Saharanpur Verified
             </span>
           </div>
         </div>
@@ -323,7 +357,7 @@ export const Header: React.FC<HeaderProps> = ({
               onOpenLocationModal();
               setMobileMenuOpen(false);
             }}
-            className="w-full flex items-center justify-between p-3 bg-orange-50/80 rounded-xl border border-orange-200/70 text-left"
+            className="w-full flex items-center justify-between p-3 bg-orange-50/80 rounded-xl border border-orange-200/70 text-left cursor-pointer"
           >
             <div className="flex items-center gap-2.5">
               <MapPin className="w-4 h-4 text-orange-600 shrink-0" />
@@ -340,48 +374,36 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Navigation Links */}
           <div className="space-y-1.5 text-sm font-medium">
             <button
-              onClick={() => {
-                setActiveTab('home');
-                setMobileMenuOpen(false);
-              }}
-              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between ${
-                activeTab === 'home' ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
+              onClick={() => handleNav('/', 'home')}
+              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between cursor-pointer ${
+                isHome ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
               }`}
             >
               <span>Home</span>
               <ArrowRight className="w-4 h-4 text-slate-400" />
             </button>
             <button
-              onClick={() => {
-                setActiveTab('catalog');
-                setMobileMenuOpen(false);
-              }}
-              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between ${
-                activeTab === 'catalog' ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
+              onClick={() => handleNav('/products', 'catalog')}
+              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between cursor-pointer ${
+                isProducts ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
               }`}
             >
               <span>Browse Products & Categories</span>
               <ArrowRight className="w-4 h-4 text-slate-400" />
             </button>
             <button
-              onClick={() => {
-                setActiveTab('shops');
-                setMobileMenuOpen(false);
-              }}
-              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between ${
-                activeTab === 'shops' ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
+              onClick={() => handleNav('/shops', 'shops')}
+              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between cursor-pointer ${
+                isShops ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
               }`}
             >
               <span>Saharanpur Local Shops</span>
               <ArrowRight className="w-4 h-4 text-slate-400" />
             </button>
             <button
-              onClick={() => {
-                setActiveTab('enquiries');
-                setMobileMenuOpen(false);
-              }}
-              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between ${
-                activeTab === 'enquiries' ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
+              onClick={() => handleNav('/enquiries', 'enquiries')}
+              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between cursor-pointer ${
+                isEnquiries ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
               }`}
             >
               <div className="flex items-center gap-2">
@@ -399,44 +421,60 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Seller / Admin CTAs */}
           <div className="pt-2 border-t border-slate-100 space-y-2">
             <button
-              onClick={() => {
-                setActiveTab('seller-register');
-                setMobileMenuOpen(false);
-              }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-xs"
+              onClick={() => handleNav('/seller/register', 'seller-register')}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-xs cursor-pointer"
             >
               <Store className="w-4 h-4" />
-              <span>Register as a Seller (₹199 / Year)</span>
+              <span>Register as a Seller — FREE 1st Year (₹0)</span>
             </button>
             <div className="grid grid-cols-2 gap-2 pt-1">
               <button
-                onClick={() => {
-                  setActiveTab('seller-dashboard');
-                  setMobileMenuOpen(false);
-                }}
-                className="py-2 px-3 text-center text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg"
+                onClick={() => handleNav('/seller/dashboard', 'seller-dashboard')}
+                className="py-2 px-3 text-center text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg cursor-pointer"
               >
                 Seller Portal
               </button>
               <button
-                onClick={() => {
-                  setActiveTab('admin-dashboard');
-                  setMobileMenuOpen(false);
-                }}
-                className="py-2 px-3 text-center text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg"
+                onClick={() => handleNav('/admin', 'admin-dashboard')}
+                className="py-2 px-3 text-center text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white rounded-lg cursor-pointer"
               >
                 Admin Center
               </button>
             </div>
-            <button
-              onClick={() => {
-                setActiveTab('legal');
-                setMobileMenuOpen(false);
-              }}
-              className="w-full text-center py-2 text-xs text-slate-500 hover:text-slate-800"
-            >
-              About MattoKart & Legal Guidelines
-            </button>
+            <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2">
+              <a
+                href="https://wa.me/918221077674"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 py-2 px-3 text-center text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </a>
+              <a
+                href="tel:+918221077674"
+                className="flex-1 py-2 px-3 text-center text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg flex items-center justify-center gap-1.5"
+              >
+                <Phone className="w-3.5 h-3.5 text-orange-600" />
+                <span>Call Us</span>
+              </a>
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+              <button
+                onClick={() => handleNav('/legal/contact', 'legal')}
+                className="hover:text-orange-600 font-semibold cursor-pointer"
+              >
+                Contact & Support
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => handleNav('/legal/about', 'legal')}
+                className="hover:text-slate-800 cursor-pointer"
+              >
+                About & Policies
+              </button>
+            </div>
           </div>
         </div>
       )}

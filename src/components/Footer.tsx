@@ -1,24 +1,27 @@
 import React from 'react';
 import {
-  Store,
   MapPin,
   Phone,
   Mail,
+  MessageCircle,
   ShieldCheck,
-  CheckCircle2,
-  Sparkles,
   ArrowRight,
-  FileText,
-  AlertTriangle,
 } from 'lucide-react';
-import { ActiveTab, LegalDocType } from '../types';
+import { ActiveTab, LegalDocType, CategoryId } from '../types';
 
 interface FooterProps {
   setActiveTab: (tab: ActiveTab) => void;
   onOpenLegalDoc: (doc: LegalDocType) => void;
+  onSelectCategory?: (catId: CategoryId) => void;
+  onSelectSearch?: (query: string) => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ setActiveTab, onOpenLegalDoc }) => {
+export const Footer: React.FC<FooterProps> = ({
+  setActiveTab,
+  onOpenLegalDoc,
+  onSelectCategory,
+  onSelectSearch,
+}) => {
   return (
     <footer className="bg-slate-900 text-slate-300 pt-12 pb-24 md:pb-12 border-t border-slate-800 text-sm">
       <div className="max-w-7xl mx-auto px-4 space-y-10">
@@ -44,19 +47,70 @@ export const Footer: React.FC<FooterProps> = ({ setActiveTab, onOpenLegalDoc }) 
               MattoKart is the dedicated multi-vendor marketplace connecting Saharanpur's local manufacturers, master woodcraft artisans, building material distributors, and neighborhood retailers directly with buyers across western Uttar Pradesh.
             </p>
 
-            <div className="space-y-2 text-xs text-slate-400 pt-2">
+            <div className="space-y-2.5 text-xs text-slate-400 pt-2">
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-orange-400 shrink-0" />
                 <span>Court Road Commercial Hub, Saharanpur, UP - 247001</span>
               </div>
               <div className="flex items-center gap-2">
                 <Phone className="w-4 h-4 text-orange-400 shrink-0" />
-                <span>+91 98970 00111 / +91 94120 00222</span>
+                <a
+                  href="tel:+918221077674"
+                  className="hover:text-orange-400 transition-colors"
+                >
+                  +91 8221077674
+                </a>
+              </div>
+              <div className="flex items-center gap-2">
+                <MessageCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                <a
+                  href="https://wa.me/918221077674"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-emerald-400 transition-colors"
+                >
+                  WhatsApp: +91 8221077674
+                </a>
               </div>
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-orange-400 shrink-0" />
-                <span>support@mattokart.com / contact@mattokart.com</span>
+                <a
+                  href="mailto:creatormovie15@gmail.com"
+                  className="hover:text-orange-400 transition-colors break-all"
+                >
+                  creatormovie15@gmail.com
+                </a>
               </div>
+            </div>
+
+            {/* Quick Contact Action Buttons */}
+            <div className="pt-2 flex flex-wrap items-center gap-2">
+              <a
+                href="tel:+918221077674"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold transition-colors shadow-xs"
+                title="Call MattoKart"
+              >
+                <Phone className="w-3.5 h-3.5" />
+                <span>Call Us</span>
+              </a>
+              <a
+                href="https://wa.me/918221077674"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors shadow-xs"
+                title="WhatsApp MattoKart"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>WhatsApp</span>
+              </a>
+              <a
+                href="mailto:creatormovie15@gmail.com"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-medium transition-colors"
+                title="Email MattoKart"
+              >
+                <Mail className="w-3.5 h-3.5 text-orange-400" />
+                <span>Email Us</span>
+              </a>
             </div>
           </div>
 
@@ -84,7 +138,13 @@ export const Footer: React.FC<FooterProps> = ({ setActiveTab, onOpenLegalDoc }) 
               </li>
               <li>
                 <button
-                  onClick={() => setActiveTab('catalog')}
+                  onClick={() => {
+                    if (onSelectCategory) {
+                      onSelectCategory('construction');
+                    } else {
+                      setActiveTab('catalog');
+                    }
+                  }}
                   className="hover:text-orange-400 transition-colors cursor-pointer"
                 >
                   Construction Materials
@@ -92,7 +152,15 @@ export const Footer: React.FC<FooterProps> = ({ setActiveTab, onOpenLegalDoc }) 
               </li>
               <li>
                 <button
-                  onClick={() => setActiveTab('catalog')}
+                  onClick={() => {
+                    if (onSelectCategory) {
+                      onSelectCategory('furniture');
+                    } else if (onSelectSearch) {
+                      onSelectSearch('woodcraft');
+                    } else {
+                      setActiveTab('catalog');
+                    }
+                  }}
                   className="hover:text-orange-400 transition-colors cursor-pointer"
                 >
                   Saharanpur Woodcraft Special
@@ -120,7 +188,7 @@ export const Footer: React.FC<FooterProps> = ({ setActiveTab, onOpenLegalDoc }) 
                   onClick={() => setActiveTab('seller-register')}
                   className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 cursor-pointer"
                 >
-                  <span>Become a Seller (₹199/yr)</span>
+                  <span>Become a Seller (FREE 1st Year)</span>
                   <ArrowRight className="w-3 h-3" />
                 </button>
               </li>

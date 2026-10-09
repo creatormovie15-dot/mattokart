@@ -70,8 +70,8 @@ export interface Seller {
   reviewsCount: number;
   joinedDate: string;
   status: 'active' | 'pending_approval' | 'suspended';
-  registrationFeeStatus: 'paid_pending_gateway' | 'verified' | 'unpaid' | 'demo_waived';
-  proposedFee: number; // 199
+  registrationFeeStatus: 'free_first_year' | 'paid_pending_gateway' | 'verified' | 'unpaid' | 'demo_waived';
+  proposedFee: number; // 0 (Free First Year - No registration or listing fee)
   bannerImage?: string;
   shopLogo?: string;
   description: string;

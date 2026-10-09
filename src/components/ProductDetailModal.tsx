@@ -7,12 +7,8 @@ import {
   MessageCircle,
   Truck,
   ShieldCheck,
-  Check,
-  Clock,
   Sparkles,
-  Layers,
   ArrowRight,
-  ExternalLink,
 } from 'lucide-react';
 import { Product } from '../types';
 

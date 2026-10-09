@@ -7,16 +7,11 @@ import {
   UserCheck,
   CheckCircle2,
   Clock,
-  AlertCircle,
   Edit2,
   Trash2,
   X,
   Phone,
   MessageCircle,
-  Truck,
-  Image as ImageIcon,
-  Save,
-  Check,
   Sparkles,
 } from 'lucide-react';
 import { Product, Seller, BuyerEnquiry, Category, UnitType, CategoryId } from '../types';
@@ -233,19 +228,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Proposed Fee Status */}
+        {/* Free First Year Status */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
             <Store className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] text-slate-500 font-medium">Annual Registration Fee</div>
+            <div className="text-[11px] text-slate-500 font-medium">Seller Plan & Membership</div>
             <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-              <span>₹199 / Yr</span>
-              <span className="text-[10px] bg-amber-100 text-amber-800 font-medium px-1.5 py-0.2 rounded">
-                Pending Gateway
+              <span>FREE First Year (₹0)</span>
+              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">
+                ₹0 Registration
               </span>
             </div>
+            <div className="text-[10px] text-slate-500">No listing fee during the first year</div>
           </div>
         </div>
 

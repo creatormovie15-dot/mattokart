@@ -6,7 +6,6 @@ import {
   Eye,
   CheckCircle2,
   Sparkles,
-  PhoneCall,
 } from 'lucide-react';
 import { Product } from '../types';
 

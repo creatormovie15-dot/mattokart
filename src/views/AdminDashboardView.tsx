@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import {
-  ShieldAlert,
   ShieldCheck,
   CheckCircle2,
   XCircle,
-  AlertTriangle,
   Store,
   Package,
   Layers,
@@ -14,11 +12,6 @@ import {
   Lock,
   Unlock,
   Plus,
-  RefreshCw,
-  Search,
-  Check,
-  Eye,
-  Info,
 } from 'lucide-react';
 import { Seller, Product, Category, BuyerEnquiry, CategoryId } from '../types';
 
@@ -55,8 +48,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [authError, setAuthError] = useState('');
 
   const [activeTab, setActiveTab] = useState<'applications' | 'products' | 'sellers' | 'categories' | 'fees' | 'enquiries'>('applications');
-  const [rejectionModalProduct, setRejectionModalProduct] = useState<Product | null>(null);
-  const [rejectionReason, setRejectionReason] = useState('Prohibited item or missing verifiable details');
 
   // New Category Modal
   const [isAddCatModalOpen, setIsAddCatModalOpen] = useState(false);
@@ -163,7 +154,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             MattoKart Admin Control Center
           </h1>
           <p className="text-xs text-slate-500">
-            Review seller applications, track ₹199/yr fees, moderate products, and manage permitted categories.
+            Review seller applications, track Free First Year onboarding, moderate products, and manage permitted categories.
           </p>
         </div>
 
@@ -202,9 +193,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs col-span-2 lg:col-span-1">
-          <div className="text-[11px] text-slate-500 font-medium">Registration Fee Status</div>
-          <div className="text-2xl font-black text-orange-600 mt-0.5">₹199 / yr</div>
-          <div className="text-[10px] text-amber-800 font-semibold">Demo Gateway Mode</div>
+          <div className="text-[11px] text-slate-500 font-medium">Seller Fee Policy</div>
+          <div className="text-2xl font-black text-emerald-600 mt-0.5">₹0 / Free</div>
+          <div className="text-[10px] text-emerald-800 font-semibold">FREE First Year</div>
         </div>
       </div>
 
@@ -349,9 +340,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       </span>
                     </div>
                     <div>
-                      <span className="text-slate-400 block">Registration Fee (₹199)</span>
-                      <span className="font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded font-mono">
-                        {seller.registrationFeeStatus}
+                      <span className="text-slate-400 block">Pricing Plan (₹0 Fee)</span>
+                      <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded font-mono">
+                        {seller.registrationFeeStatus === 'free_first_year' ? 'Free 1st Year' : seller.registrationFeeStatus}
                       </span>
                     </div>
                   </div>
@@ -639,19 +630,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-sm text-slate-900">
-              Seller Registration Fee Verification (₹199 / Year)
+              Seller Fee & Membership Audit (FREE First Year: ₹0)
             </h3>
-            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
-              Demo Mode: Gateway Integration Planned
+            <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-semibold">
+              FREE First Year: ₹0 Registration & ₹0 Listing
             </span>
           </div>
 
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
-            <p className="font-semibold text-slate-900">
-              Compliance & Payment Safety Notice:
+          <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs text-slate-700 space-y-1">
+            <p className="font-bold text-emerald-950">
+              No registration fee. No listing fee during the first year.
             </p>
             <p>
-              In accordance with payment security standards, no seller fee is marked as paid without verified payment gateway webhook tokens. Administrators can manually audit or waive fees for local Saharanpur test onboarding.
+              In accordance with MattoKart business rules, seller registration fee is ₹0, shop creation fee is ₹0, and product listing fee is ₹0. No registration payments are collected. Any future fees beyond the first year must be clearly announced and accepted before taking effect.
             </p>
           </div>
 
@@ -661,8 +652,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase text-[10px]">
                   <th className="p-3">Shop Name</th>
                   <th className="p-3">Proprietor</th>
-                  <th className="p-3">Proposed Fee</th>
-                  <th className="p-3">Current Fee Status</th>
+                  <th className="p-3">Fee / Year</th>
+                  <th className="p-3">Plan Status</th>
                   <th className="p-3 text-right">Admin Action</th>
                 </tr>
               </thead>
@@ -671,32 +662,32 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <tr key={s.id}>
                     <td className="p-3 font-bold text-slate-900">{s.shopName}</td>
                     <td className="p-3 text-slate-600">{s.ownerName}</td>
-                    <td className="p-3 font-mono font-bold text-slate-800">₹{s.proposedFee} / yr</td>
+                    <td className="p-3 font-mono font-bold text-emerald-700">₹0 (Free 1st Yr)</td>
                     <td className="p-3">
                       <span className={`px-2 py-0.5 rounded-full font-mono text-[10px] font-bold ${
-                        s.registrationFeeStatus === 'verified'
+                        s.registrationFeeStatus === 'free_first_year' || s.registrationFeeStatus === 'verified'
                           ? 'bg-emerald-100 text-emerald-800'
                           : s.registrationFeeStatus === 'paid_pending_gateway'
                           ? 'bg-amber-100 text-amber-800'
                           : 'bg-slate-100 text-slate-700'
                       }`}>
-                        {s.registrationFeeStatus}
+                        {s.registrationFeeStatus === 'free_first_year' ? 'free_first_year' : s.registrationFeeStatus}
                       </span>
                     </td>
                     <td className="p-3 text-right space-x-1">
-                      {s.registrationFeeStatus !== 'verified' ? (
+                      {s.registrationFeeStatus !== 'free_first_year' && s.registrationFeeStatus !== 'verified' ? (
                         <button
-                          onClick={() => onUpdateSellerFeeStatus(s.id, 'verified')}
+                          onClick={() => onUpdateSellerFeeStatus(s.id, 'free_first_year')}
                           className="px-2.5 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-bold"
                         >
-                          Mark Verified
+                          Confirm Free 1st Yr
                         </button>
                       ) : (
                         <button
-                          onClick={() => onUpdateSellerFeeStatus(s.id, 'paid_pending_gateway')}
+                          onClick={() => onUpdateSellerFeeStatus(s.id, 'demo_waived')}
                           className="px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-medium"
                         >
-                          Reset to Pending
+                          Mark Waived
                         </button>
                       )}
                     </td>

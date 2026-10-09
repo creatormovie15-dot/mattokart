@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Send, Store, MapPin, CheckCircle2, MessageCircle, AlertCircle } from 'lucide-react';
+import { X, Send, CheckCircle2, MessageCircle } from 'lucide-react';
 import { Product, BuyerEnquiry, SaharanpurLocality } from '../types';
 import { SAHARANPUR_LOCALITIES } from '../data/mockData';
 

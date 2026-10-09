@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ActiveTab,
   Category,
@@ -60,6 +61,9 @@ const safeSave = <T,>(key: string, value: T): void => {
 };
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
   // Navigation & location state
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
   const [selectedLocality, setSelectedLocality] = useState<SaharanpurLocality>(() =>
@@ -69,6 +73,57 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [catalogCategory, setCatalogCategory] = useState<CategoryId | 'all'>('all');
   const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocType>('about');
+
+  // Synchronize state with URL routing (supports direct links, Netlify page refresh, browser back/forward)
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === '/' || path === '') {
+      setActiveTab('home');
+    } else if (path.startsWith('/products') || path.startsWith('/catalog')) {
+      setActiveTab('catalog');
+      const params = new URLSearchParams(location.search);
+      const q = params.get('search');
+      const cat = params.get('category');
+      const special = params.get('special');
+      if (q !== null && q !== undefined) {
+        setSearchQuery(q);
+      }
+      if (cat) {
+        setCatalogCategory(cat as CategoryId);
+      }
+      if (special === 'woodcraft') {
+        setCatalogCategory('furniture');
+      }
+    } else if (path === '/shops') {
+      setActiveTab('shops');
+    } else if (path === '/seller/register') {
+      setActiveTab('seller-register');
+    } else if (path === '/seller/dashboard') {
+      setActiveTab('seller-dashboard');
+    } else if (path === '/admin' || path === '/admin-dashboard') {
+      setActiveTab('admin-dashboard');
+    } else if (path === '/enquiries') {
+      setActiveTab('enquiries');
+    } else if (path.startsWith('/legal')) {
+      setActiveTab('legal');
+      const parts = path.split('/');
+      if (parts[2]) {
+        setActiveLegalDoc(parts[2] as LegalDocType);
+      }
+    } else if (path === '/contact' || path === '/contact-us') {
+      setActiveTab('legal');
+      setActiveLegalDoc('contact');
+    } else if (path === '/about') {
+      setActiveTab('legal');
+      setActiveLegalDoc('about');
+    } else if (path === '/privacy') {
+      setActiveTab('legal');
+      setActiveLegalDoc('privacy');
+    } else if (path === '/terms') {
+      setActiveTab('legal');
+      setActiveLegalDoc('terms');
+    }
+  }, [location.pathname, location.search]);
 
   // Marketplace data state (restored with safe fallback to initial Saharanpur data)
   const [categories, setCategories] = useState<Category[]>(() =>
@@ -106,25 +161,66 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // Tab switcher synchronized with URL routes
+  const handleSetActiveTab = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    switch (tab) {
+      case 'home':
+        navigate('/');
+        break;
+      case 'catalog':
+        navigate('/products');
+        break;
+      case 'shops':
+        navigate('/shops');
+        break;
+      case 'seller-register':
+        navigate('/seller/register');
+        break;
+      case 'seller-dashboard':
+        navigate('/seller/dashboard');
+        break;
+      case 'admin-dashboard':
+        navigate('/admin');
+        break;
+      case 'enquiries':
+        navigate('/enquiries');
+        break;
+      case 'legal':
+        navigate(`/legal/${activeLegalDoc || 'about'}`);
+        break;
+    }
+  };
+
   // Handlers
   const handlePerformSearch = (query: string) => {
-    setSearchQuery(query);
+    const q = query.trim();
+    setSearchQuery(q);
     setActiveTab('catalog');
+    if (q) {
+      navigate(`/products?search=${encodeURIComponent(q)}`);
+    } else {
+      navigate('/products');
+    }
   };
 
   const handleSelectCategory = (catId: CategoryId) => {
     setCatalogCategory(catId);
     setActiveTab('catalog');
+    navigate(`/products?category=${encodeURIComponent(catId)}`);
   };
 
   const handleSelectShopProducts = (shopName: string) => {
     setSearchQuery(shopName);
+    setCatalogCategory('all');
     setActiveTab('catalog');
+    navigate(`/products?search=${encodeURIComponent(shopName)}`);
   };
 
   const handleOpenLegalDoc = (doc: LegalDocType) => {
     setActiveLegalDoc(doc);
     setActiveTab('legal');
+    navigate(`/legal/${doc}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -283,7 +379,7 @@ export default function App() {
       {/* Main Header */}
       <Header
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSetActiveTab}
         selectedLocality={selectedLocality}
         onOpenLocationModal={() => setIsLocationModalOpen(true)}
         searchQuery={searchQuery}
@@ -306,10 +402,11 @@ export default function App() {
               onContactSeller={(p) => setSelectedProductForEnquiry(p)}
               onGoToCatalog={() => {
                 setCatalogCategory('all');
-                setActiveTab('catalog');
+                handleSetActiveTab('catalog');
               }}
-              onGoToSellerRegister={() => setActiveTab('seller-register')}
+              onGoToSellerRegister={() => handleSetActiveTab('seller-register')}
               onOpenLocationModal={() => setIsLocationModalOpen(true)}
+              onSelectShopProducts={handleSelectShopProducts}
             />
           )}
 
@@ -332,7 +429,7 @@ export default function App() {
               sellers={sellers}
               products={products}
               onSelectShopProducts={handleSelectShopProducts}
-              onGoToSellerRegister={() => setActiveTab('seller-register')}
+              onGoToSellerRegister={() => handleSetActiveTab('seller-register')}
             />
           )}
 
@@ -340,7 +437,7 @@ export default function App() {
             <SellerRegisterView
               categories={categories}
               onRegisterSeller={handleRegisterSeller}
-              onGoToDashboard={() => setActiveTab('seller-dashboard')}
+              onGoToDashboard={() => handleSetActiveTab('seller-dashboard')}
             />
           )}
 
@@ -376,7 +473,7 @@ export default function App() {
           {activeTab === 'enquiries' && (
             <EnquiriesView
               enquiries={enquiries}
-              onGoToCatalog={() => setActiveTab('catalog')}
+              onGoToCatalog={() => handleSetActiveTab('catalog')}
             />
           )}
 
@@ -386,14 +483,16 @@ export default function App() {
 
       {/* Footer */}
       <Footer
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSetActiveTab}
         onOpenLegalDoc={handleOpenLegalDoc}
+        onSelectCategory={handleSelectCategory}
+        onSelectSearch={handleSelectShopProducts}
       />
 
       {/* Mobile Bottom Navigation */}
       <MobileNav
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSetActiveTab}
         enquiriesCount={enquiries.length}
       />
 

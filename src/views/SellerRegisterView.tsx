@@ -2,16 +2,11 @@ import React, { useState } from 'react';
 import {
   Store,
   CheckCircle2,
-  AlertTriangle,
   ArrowRight,
-  ShieldCheck,
-  Building,
-  MapPin,
-  Mail,
-  Phone,
-  FileCheck,
   Info,
-  Layers,
+  Phone,
+  MessageCircle,
+  Mail,
 } from 'lucide-react';
 import { Category, CategoryId, Seller } from '../types';
 import { SAHARANPUR_LOCALITIES } from '../data/mockData';
@@ -109,8 +104,8 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
       reviewsCount: 1,
       joinedDate: new Date().toISOString().split('T')[0],
       status: 'pending_approval', // Pending admin review
-      registrationFeeStatus: 'paid_pending_gateway', // Clearly marked as pending real payment verification
-      proposedFee: 199,
+      registrationFeeStatus: 'free_first_year', // Free first year: zero fee
+      proposedFee: 0,
       description: description.trim(),
       deliveryRadiusKm,
       bannerImage: 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=1200&q=80',
@@ -125,16 +120,48 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-8">
       {/* Top Banner */}
       <div className="text-center space-y-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-100 text-orange-700 text-xs font-bold uppercase tracking-wider">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold uppercase tracking-wider border border-emerald-300">
           <Store className="w-3.5 h-3.5" />
-          <span>MattoKart Partner Network • Saharanpur</span>
+          <span>Join MattoKart — FREE for Your First Year</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 font-brand">
           Register Your Shop on MattoKart
         </h1>
-        <p className="text-sm text-slate-600 max-w-xl mx-auto">
-          Expand your sales across Saharanpur & western Uttar Pradesh. Reach retail buyers, contractors, and local families.
+        <p className="text-sm font-semibold text-emerald-700 max-w-xl mx-auto">
+          No registration fee. No listing fee during the first year.
         </p>
+        <p className="text-xs text-slate-600 max-w-xl mx-auto">
+          Expand your sales across Saharanpur & western Uttar Pradesh with ₹0 shop creation, ₹0 product listing, and zero commission leads.
+        </p>
+
+        {/* WhatsApp & Helpline Support Bar */}
+        <div className="pt-2 max-w-xl mx-auto">
+          <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-emerald-950 font-semibold text-center sm:text-left">
+              <MessageCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Need help onboarding? Chat with MattoKart on WhatsApp</span>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2 shrink-0">
+              <a
+                href="https://wa.me/918221077674?text=Namaste%20MattoKart!%20I%20need%20help%20registering%20my%20shop%20in%20Saharanpur."
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs transition-colors"
+              >
+                <MessageCircle className="w-3.5 h-3.5" />
+                <span>WhatsApp: +91 8221077674</span>
+              </a>
+              <a
+                href="tel:+918221077674"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-800 border border-emerald-200 font-semibold rounded-xl transition-colors"
+                title="Call Support"
+              >
+                <Phone className="w-3.5 h-3.5 text-orange-600" />
+                <span>Call</span>
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Success State */}
@@ -157,17 +184,31 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
           </div>
 
           {/* Fee & Payment Notice */}
-          <div className="p-5 rounded-2xl bg-amber-50 border border-amber-200 text-left text-xs space-y-2 max-w-xl mx-auto">
-            <div className="flex items-center gap-2 font-bold text-amber-900">
-              <Info className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>Proposed Seller Registration Fee: ₹199 / Year</span>
+          <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-left text-xs space-y-2 max-w-xl mx-auto">
+            <div className="flex items-center gap-2 font-bold text-emerald-950">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Seller Registration Fee: ₹0 (FREE First Year)</span>
             </div>
-            <p className="text-amber-800 leading-relaxed">
-              <strong>Notice:</strong> The annual seller registration fee of <strong>₹199/year</strong> is currently marked as <span className="font-semibold underline">Pending Verification</span>. No live payment has been processed. In production, this fee will be verified via a licensed Indian payment gateway (Razorpay / UPI) before public storefront listing.
+            <p className="text-emerald-900 leading-relaxed font-semibold">
+              No registration fee. No listing fee during the first year.
+            </p>
+            <p className="text-slate-600 leading-relaxed">
+              Your digital shop has been registered at ₹0 charges. No payment has been deducted. Any future fees beyond the free first year will be announced in advance and will require your explicit acceptance before taking effect.
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+            <a
+              href={`https://wa.me/918221077674?text=${encodeURIComponent(
+                `Namaste MattoKart! I submitted my shop registration for "${submittedApplication.shopName}" (${submittedApplication.ownerName}). Please assist with onboarding.`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+            >
+              <MessageCircle className="w-4 h-4" />
+              <span>Connect on WhatsApp (+91 8221077674)</span>
+            </a>
             <button
               onClick={onGoToDashboard}
               className="px-6 py-3.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
@@ -550,35 +591,51 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
               <form onSubmit={handleSubmit} className="space-y-6 animate-in fade-in">
                 <div className="border-b border-slate-100 pb-3">
                   <h3 className="text-lg font-bold text-slate-900">
-                    Step 4: Seller Registration Fee & Agreement
+                    Step 4: FREE First-Year Membership & Seller Agreement
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Please review the planned registration fee structure and agree to permitted goods compliance.
+                    Join MattoKart — FREE for Your First Year. Review the ₹0 fee model and agree to permitted goods compliance.
                   </p>
                 </div>
 
                 {/* Proposed Fee Disclosure Card */}
-                <div className="p-5 rounded-2xl bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 space-y-3">
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-green-50 border border-emerald-200 space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-xs font-bold text-orange-700 uppercase tracking-wider">
-                        Annual Seller Membership
+                      <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
+                        Join MattoKart — FREE for Your First Year
                       </span>
-                      <h4 className="text-2xl font-black text-slate-900 font-brand">
-                        ₹199 <span className="text-xs font-semibold text-slate-500">/ Year</span>
+                      <h4 className="text-3xl font-black text-emerald-950 font-brand flex items-baseline gap-2">
+                        ₹0 <span className="text-xs font-semibold text-emerald-800">/ First Year</span>
                       </h4>
                     </div>
-                    <span className="px-3 py-1 bg-amber-200/70 text-amber-900 font-bold text-xs rounded-full border border-amber-300">
-                      Planned Demo Fee
+                    <span className="px-3 py-1 bg-emerald-200/80 text-emerald-950 font-bold text-xs rounded-full border border-emerald-300">
+                      100% Free Onboarding
                     </span>
                   </div>
 
-                  <div className="text-xs text-slate-700 space-y-1.5 border-t border-orange-200/60 pt-3">
-                    <p className="font-semibold text-orange-950">
-                      Payment Verification Notice:
+                  {/* Bullet points for fee breakdown */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-xs">
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-200/60">
+                      <div className="font-bold text-emerald-900">₹0 Registration Fee</div>
+                      <div className="text-[11px] text-slate-600">Zero signup charge</div>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-200/60">
+                      <div className="font-bold text-emerald-900">₹0 Shop Creation Fee</div>
+                      <div className="text-[11px] text-slate-600">Digital storefront setup</div>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-200/60">
+                      <div className="font-bold text-emerald-900">₹0 Listing Fee</div>
+                      <div className="text-[11px] text-slate-600">Unlimited products</div>
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-slate-700 space-y-1.5 border-t border-emerald-200/60 pt-3">
+                    <p className="font-bold text-emerald-950">
+                      No registration fee. No listing fee during the first year.
                     </p>
                     <p className="text-slate-600 leading-relaxed">
-                      The proposed seller registration fee is <strong>₹199 per year</strong>. In this demo MVP, your registration will be submitted as <em>"Pending Verification"</em>. No payment will be deducted until an official RBI-compliant payment gateway is linked.
+                      We do not collect any registration or listing payments. MattoKart does not automatically promise or assume that the service will become paid after one year. Any future fees or commercial terms will be clearly announced in advance and will require your explicit review and acceptance before taking effect.
                     </p>
                   </div>
                 </div>
@@ -603,10 +660,10 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                       type="checkbox"
                       checked={agreedToTerms}
                       onChange={(e) => setAgreedToTerms(e.target.checked)}
-                      className="mt-1 accent-orange-600 rounded"
+                      className="mt-1 accent-emerald-600 rounded"
                     />
                     <span className="text-xs text-slate-700 leading-snug">
-                      I have read and agree to the <strong>MattoKart Seller Terms & Conditions</strong> and acknowledge that my shop application and ₹199/yr membership are subject to admin review.
+                      I have read and agree to the <strong>MattoKart Seller Terms & Conditions</strong> and acknowledge that my shop application is <strong>FREE for the first year (₹0 registration, ₹0 listing fee)</strong> and subject to standard administrative verification.
                     </span>
                   </label>
                   {errors.terms && <p className="text-xs text-red-500 mt-1 font-semibold">{errors.terms}</p>}

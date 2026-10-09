@@ -36,6 +36,7 @@ interface HomeViewProps {
   onGoToCatalog: () => void;
   onGoToSellerRegister: () => void;
   onOpenLocationModal: () => void;
+  onSelectShopProducts?: (shopName: string) => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -49,6 +50,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onGoToCatalog,
   onGoToSellerRegister,
   onOpenLocationModal,
+  onSelectShopProducts,
 }) => {
   const featuredProducts = products.filter((p) => p.featured && p.status === 'approved');
   const recentProducts = products.filter((p) => p.recentlyAdded && p.status === 'approved');
@@ -126,7 +128,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               className="px-5 py-3.5 rounded-xl font-semibold text-sm bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-sm transition-all flex items-center gap-2 cursor-pointer"
             >
               <Store className="w-4 h-4 text-amber-400" />
-              <span>Register Shop (₹199 / Yr)</span>
+              <span>Join MattoKart — FREE for Your First Year</span>
             </button>
           </div>
 
@@ -298,28 +300,31 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-center">
             <div className="lg:col-span-2 space-y-3">
               <span className="bg-black/20 text-white text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                Seller Onboarding Special
+                Join MattoKart — FREE for Your First Year
               </span>
               <h2 className="text-2xl sm:text-3xl font-extrabold font-brand">
-                Saharanpur ke Dukaandar bane Digital!
+                Saharanpur ke Dukaandar bane Digital — 100% Free Setup!
               </h2>
               <p className="text-orange-100 text-xs sm:text-sm leading-relaxed">
-                Connect your physical shop on Court Road, Delhi Road, Hasanpur, Bajoria Road, or Nehru Market with thousands of digital buyers across Saharanpur. Get direct WhatsApp enquiries without hefty middleman commissions.
+                Connect your physical shop on Court Road, Delhi Road, Hasanpur, Bajoria Road, or Nehru Market with thousands of digital buyers across Saharanpur. <strong className="text-white underline underline-offset-2">No registration fee. No listing fee during the first year.</strong> Get direct WhatsApp enquiries without hefty middleman commissions.
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2 text-xs">
                 <div className="bg-white/10 backdrop-blur-xs p-3 rounded-xl border border-white/15">
-                  <div className="font-extrabold text-base text-amber-300">₹199 / Year</div>
-                  <div className="text-[11px] text-orange-100">Proposed Seller Fee</div>
+                  <div className="font-extrabold text-base text-amber-300">₹0 Fee</div>
+                  <div className="text-[11px] text-orange-100">Free First Year (Registration ₹0)</div>
                 </div>
                 <div className="bg-white/10 backdrop-blur-xs p-3 rounded-xl border border-white/15">
-                  <div className="font-extrabold text-base text-amber-300">0% Commission</div>
-                  <div className="text-[11px] text-orange-100">Direct Buyer Leads</div>
+                  <div className="font-extrabold text-base text-amber-300">₹0 Listing</div>
+                  <div className="text-[11px] text-orange-100">Zero Listing & Shop Creation Fee</div>
                 </div>
                 <div className="bg-white/10 backdrop-blur-xs p-3 rounded-xl border border-white/15 col-span-2 sm:col-span-1">
-                  <div className="font-extrabold text-base text-amber-300">WhatsApp</div>
-                  <div className="text-[11px] text-orange-100">Instant Customer Chat</div>
+                  <div className="font-extrabold text-base text-amber-300">Direct WhatsApp</div>
+                  <div className="text-[11px] text-orange-100">Instant Customer Leads</div>
                 </div>
               </div>
+              <p className="text-[11px] text-orange-200/90 italic">
+                * Transparency pledge: No registration fee. No listing fee during the first year. Any future policies will be announced in advance and require your explicit consent.
+              </p>
             </div>
 
             <div className="flex flex-col items-center justify-center bg-white text-slate-900 p-6 rounded-2xl shadow-xl space-y-3 text-center">
@@ -416,7 +421,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </a>
 
                 <button
-                  onClick={onGoToCatalog}
+                  onClick={() => {
+                    if (onSelectShopProducts) {
+                      onSelectShopProducts(seller.shopName);
+                    } else {
+                      onGoToCatalog();
+                    }
+                  }}
                   className="text-xs font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 cursor-pointer"
                 >
                   <span>View Products</span>

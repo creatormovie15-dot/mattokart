@@ -1,15 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  FileText,
   AlertTriangle,
-  ShieldCheck,
   Building,
-  Mail,
   Phone,
-  MapPin,
-  Clock,
-  ArrowRight,
-  Info,
+  Mail,
+  MessageCircle,
 } from 'lucide-react';
 import { LegalDocType } from '../types';
 
@@ -19,6 +14,10 @@ interface LegalViewProps {
 
 export const LegalView: React.FC<LegalViewProps> = ({ initialDoc = 'about' }) => {
   const [activeDoc, setActiveDoc] = useState<LegalDocType>(initialDoc);
+
+  useEffect(() => {
+    if (initialDoc) setActiveDoc(initialDoc);
+  }, [initialDoc]);
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
@@ -76,7 +75,7 @@ export const LegalView: React.FC<LegalViewProps> = ({ initialDoc = 'about' }) =>
               : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
           }`}
         >
-          Seller Agreement (₹199 / Yr)
+          Seller Agreement (FREE 1st Year)
         </button>
 
         <button
@@ -136,9 +135,9 @@ export const LegalView: React.FC<LegalViewProps> = ({ initialDoc = 'about' }) =>
                 </p>
               </div>
               <div className="p-4 rounded-2xl bg-orange-50 border border-orange-200">
-                <h4 className="font-bold text-slate-900 text-sm mb-1">Affordable Seller Access</h4>
+                <h4 className="font-bold text-slate-900 text-sm mb-1">FREE First-Year Seller Access</h4>
                 <p className="text-xs text-slate-600">
-                  Planned low annual fee of ₹199 per year without heavy order commissions, keeping local business profitable.
+                  Join MattoKart — FREE for Your First Year. No registration fee. No listing fee during the first year, keeping local business profitable.
                 </p>
               </div>
               <div className="p-4 rounded-2xl bg-orange-50 border border-orange-200">
@@ -174,19 +173,47 @@ export const LegalView: React.FC<LegalViewProps> = ({ initialDoc = 'about' }) =>
                   <p>2nd Floor, Commercial Plaza, Court Road</p>
                   <p>Near District Collectorate (Kacheri)</p>
                   <p>Saharanpur, Uttar Pradesh – 247001, India</p>
+                  <p className="text-slate-500 pt-1">Tagline: <em>Sab Kuch, Ek Hi Jagah!</em></p>
                 </div>
               </div>
 
               <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                 <div className="flex items-center gap-2 font-bold text-slate-900 text-base">
                   <Phone className="w-5 h-5 text-orange-600" />
-                  <span>Helpline & Support</span>
+                  <span>Helpline & Official Support</span>
                 </div>
                 <div className="text-xs space-y-1.5 text-slate-600">
-                  <p>Phone: <strong>+91 98970 00111 / +91 94120 00222</strong></p>
-                  <p>WhatsApp: <strong>+91 98970 00111</strong></p>
-                  <p>Email: <strong>support@mattokart.com</strong></p>
+                  <p>Phone: <strong>+91 8221077674</strong></p>
+                  <p>WhatsApp: <strong>+91 8221077674</strong></p>
+                  <p>Official Email: <strong>creatormovie15@gmail.com</strong></p>
                   <p>Operating Hours: Monday – Saturday (9:00 AM – 7:30 PM IST)</p>
+                </div>
+
+                {/* Direct Action Buttons */}
+                <div className="pt-2 flex flex-wrap items-center gap-2.5">
+                  <a
+                    href="tel:+918221077674"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Call +91 8221077674</span>
+                  </a>
+                  <a
+                    href="https://wa.me/918221077674"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>WhatsApp Chat</span>
+                  </a>
+                  <a
+                    href="mailto:creatormovie15@gmail.com"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 text-xs font-semibold rounded-xl transition-colors"
+                  >
+                    <Mail className="w-3.5 h-3.5 text-orange-600" />
+                    <span>Send Email</span>
+                  </a>
                 </div>
               </div>
             </div>
@@ -230,14 +257,20 @@ export const LegalView: React.FC<LegalViewProps> = ({ initialDoc = 'about' }) =>
                 Seller Terms & Fee Structure
               </span>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-brand">
-                Seller Agreement & Fee Policy (Draft)
+                Seller Agreement & FREE First-Year Policy
               </h1>
             </div>
 
-            <div className="p-4 rounded-2xl bg-orange-50 border border-orange-200 text-xs text-orange-950 space-y-2">
-              <h4 className="font-bold text-sm">Proposed Annual Registration Fee: ₹199 / Year</h4>
-              <p>
-                Sellers are required to pay an annual registration fee of ₹199 per year upon official public launch. In the current prototype demonstration mode, payment gateway processing is simulated and no real bank deductions take place until formal gateway integration.
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-2">
+              <h4 className="font-bold text-sm">Join MattoKart — FREE for Your First Year (₹0 Fee)</h4>
+              <p className="font-semibold text-emerald-900">
+                No registration fee. No listing fee during the first year.
+              </p>
+              <p className="text-slate-700 leading-relaxed">
+                Seller registration fee is ₹0, shop creation fee is ₹0, and product listing fee is ₹0. MattoKart does not charge sellers ₹199 or any other registration or listing fee. No registration payments are collected.
+              </p>
+              <p className="text-slate-600 leading-relaxed">
+                Important note on future fees: The free first-year policy does not automatically assume or promise that the service will become paid after one year. Any future fees or commercial terms must be clearly announced in advance and require your explicit acceptance before taking effect.
               </p>
             </div>
 
@@ -285,7 +318,7 @@ export const LegalView: React.FC<LegalViewProps> = ({ initialDoc = 'about' }) =>
               Because MattoKart connects buyers directly with local brick-and-mortar stores in Saharanpur, physical inspection of goods prior to dispatch or upon delivery is strongly recommended. For bulk construction supplies (cement, TMT steel) and custom woodcraft, returns must be coordinated according to the seller's specific terms before unloading.
             </p>
             <p className="text-xs">
-              In case of unaddressed disputes, buyers may file an escalation directly with the MattoKart Saharanpur Grievance Officer at <strong>grievance@mattokart.com</strong>.
+              In case of unaddressed disputes, buyers may file an escalation directly with the MattoKart Saharanpur Grievance Officer at <a href="mailto:creatormovie15@gmail.com" className="font-bold underline text-orange-600 hover:text-orange-700">creatormovie15@gmail.com</a> or call/WhatsApp <strong>+91 8221077674</strong>.
             </p>
           </div>
         )}

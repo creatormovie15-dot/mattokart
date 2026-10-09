@@ -4,10 +4,7 @@ import {
   Store,
   Phone,
   MessageCircle,
-  Calendar,
-  Package,
-  MapPin,
-  CheckCircle2,
+  Mail,
   Clock,
   ArrowRight,
 } from 'lucide-react';
@@ -46,6 +43,51 @@ export const EnquiriesView: React.FC<EnquiriesViewProps> = ({
           <span>Browse More Products</span>
           <ArrowRight className="w-4 h-4" />
         </button>
+      </div>
+
+      {/* Official MattoKart Support & WhatsApp Banner */}
+      <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200/80 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-xs">
+        <div className="flex items-center gap-2.5 text-slate-800 text-center sm:text-left">
+          <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <MessageCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="font-bold text-slate-900 text-xs sm:text-sm">
+              MattoKart Official Buyer Helpdesk
+            </div>
+            <div className="text-[11px] text-slate-600">
+              Need assistance following up with a vendor or shopkeeper? We're available!
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-2 shrink-0 w-full sm:w-auto">
+          <a
+            href="https://wa.me/918221077674?text=Namaste%20MattoKart!%20I%20need%20assistance%20with%20my%20product%20enquiry."
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs transition-colors"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            <span>Chat on WhatsApp (+91 8221077674)</span>
+          </a>
+          <a
+            href="tel:+918221077674"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-emerald-300 font-semibold rounded-xl transition-colors shadow-xs"
+            title="Call MattoKart Support"
+          >
+            <Phone className="w-3.5 h-3.5 text-orange-600" />
+            <span>Call</span>
+          </a>
+          <a
+            href="mailto:creatormovie15@gmail.com"
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-semibold rounded-xl transition-colors shadow-xs"
+            title="Email MattoKart Support"
+          >
+            <Mail className="w-3.5 h-3.5 text-orange-600" />
+            <span>Email</span>
+          </a>
+        </div>
       </div>
 
       {/* Enquiries List */}

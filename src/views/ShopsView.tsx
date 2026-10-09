@@ -7,8 +7,6 @@ import {
   Truck,
   CheckCircle2,
   Search,
-  ExternalLink,
-  ShieldCheck,
   Package,
 } from 'lucide-react';
 import { Seller, Product } from '../types';
@@ -68,7 +66,7 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
               onClick={onGoToSellerRegister}
               className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors"
             >
-              Register Your Shop (₹199 / Yr)
+              Register Your Shop — FREE First Year (₹0)
             </button>
           </div>
         </div>
