@@ -1,0 +1,6 @@
+{
+  "name": "MattoKart",
+  "description": "MattoKart - Sab Kuch, Ek Hi Jagah! Modern multi-vendor e-commerce marketplace starting in Saharanpur, Uttar Pradesh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
