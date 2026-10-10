@@ -34,6 +34,13 @@ import { SellerDashboardView } from './views/SellerDashboardView';
 import { AdminDashboardView } from './views/AdminDashboardView';
 import { EnquiriesView } from './views/EnquiriesView';
 import { LegalView } from './views/LegalView';
+import { isSupabaseConfigured } from './lib/supabaseClient';
+import {
+  getCategoriesFromSupabase,
+  getProductsFromSupabase,
+  getSellersFromSupabase,
+  submitEnquiryToSupabase,
+} from './lib/supabaseService';
 
 // Safe storage utilities with error immunity
 const safeLoad = <T,>(key: string, fallback: T): T => {
@@ -146,6 +153,33 @@ export default function App() {
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<Product | null>(null);
   const [selectedProductForEnquiry, setSelectedProductForEnquiry] = useState<Product | null>(null);
 
+  // Hydrate live data from Supabase if configured and reachable
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    let isMounted = true;
+    const loadSupabaseData = async () => {
+      try {
+        const [cloudCats, cloudProds, cloudSellers] = await Promise.all([
+          getCategoriesFromSupabase(),
+          getProductsFromSupabase(),
+          getSellersFromSupabase(),
+        ]);
+        if (!isMounted) return;
+        if (cloudCats && cloudCats.length > 0) setCategories(cloudCats);
+        if (cloudProds && cloudProds.length > 0) setProducts(cloudProds);
+        if (cloudSellers && cloudSellers.length > 0) setSellers(cloudSellers);
+      } catch {
+        // Fallback safely to initial/local storage data
+      }
+    };
+
+    loadSupabaseData();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Toast feedback
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -231,6 +265,11 @@ export default function App() {
       safeSave('enquiries', updated);
       return updated;
     });
+
+    if (isSupabaseConfigured) {
+      submitEnquiryToSupabase(newEnquiry).catch(() => {});
+    }
+
     addToast(
       'success',
       'Enquiry Sent to Seller!',
