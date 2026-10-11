@@ -111,6 +111,13 @@ export async function getSellersFromSupabase(): Promise<Seller[] | null> {
       shopLogo: s.shop_logo || undefined,
       description: s.description || '',
       deliveryRadiusKm: s.delivery_radius_km,
+      identityVerificationStatus: s.identity_verification_status || 'not_started',
+      identityVerificationMethod: s.identity_verification_method as any,
+      verificationReferenceId: s.verification_reference_id || undefined,
+      verificationRejectionReason: s.verification_rejection_reason || undefined,
+      reviewedBy: s.reviewed_by || undefined,
+      reviewedAt: s.reviewed_at || undefined,
+      adminNotes: s.admin_notes || undefined,
     }));
   } catch {
     return null;
@@ -160,6 +167,9 @@ export async function submitSellerApplicationToSupabase(seller: Seller, userId: 
       proposed_fee: 0.00, // ₹0 Free First Year
       description: seller.description,
       delivery_radius_km: seller.deliveryRadiusKm,
+      identity_verification_status: seller.identityVerificationStatus || 'pending',
+      identity_verification_method: seller.identityVerificationMethod || 'gstin_verified',
+      verification_reference_id: seller.verificationReferenceId || seller.gstNumber || null,
     }).select().single();
 
     if (error || !sellerRow) return false;

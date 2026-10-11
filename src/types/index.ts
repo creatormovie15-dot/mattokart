@@ -53,6 +53,26 @@ export interface Product {
   createdAt: string;
 }
 
+export type UserRole = 'customer' | 'seller' | 'admin';
+
+export type IdentityVerificationStatus = 'not_started' | 'pending' | 'verified' | 'rejected';
+
+export type IdentityVerificationMethod =
+  | 'digilocker_authorized'
+  | 'gstin_verified'
+  | 'trade_license'
+  | 'physical_inspection_saharanpur';
+
+export interface AuthUser {
+  id: string;
+  phone: string;
+  fullName?: string;
+  email?: string;
+  role: UserRole;
+  sellerId?: string;
+  token?: string;
+}
+
 export interface Seller {
   id: string;
   ownerName: string;
@@ -76,6 +96,34 @@ export interface Seller {
   shopLogo?: string;
   description: string;
   deliveryRadiusKm: number;
+  // Identity Verification (Saharanpur Vendor KYC)
+  identityVerificationStatus: IdentityVerificationStatus;
+  identityVerificationMethod?: IdentityVerificationMethod;
+  verificationReferenceId?: string; // DigiLocker ref, GSTIN, or Municipal license # (NEVER raw Aadhaar!)
+  verificationRejectionReason?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  adminNotes?: string;
+  initialProduct?: {
+    name: string;
+    price: number;
+    unit: UnitType;
+    description: string;
+    imageUrl?: string;
+    stockCount?: number;
+  };
+}
+
+export interface VerificationAuditLog {
+  id: string;
+  sellerId: string;
+  shopName: string;
+  previousStatus: string;
+  newStatus: string;
+  action: 'submit' | 'approve' | 'reject' | 'suspend' | 'request_inspection';
+  performedBy: string;
+  timestamp: string;
+  notes?: string;
 }
 
 export interface BuyerEnquiry {

@@ -13,11 +13,18 @@ import {
   Phone,
   MessageCircle,
   Sparkles,
+  ShieldCheck,
+  Lock,
+  AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 import { Product, Seller, BuyerEnquiry, Category, UnitType, CategoryId } from '../types';
+import { IdentityVerificationCard } from '../components/IdentityVerificationCard';
 
 interface SellerDashboardViewProps {
   currentSeller: Seller;
+  allSellers?: Seller[];
+  onSelectSeller?: (sellerId: string) => void;
   products: Product[];
   enquiries: BuyerEnquiry[];
   categories: Category[];
@@ -29,6 +36,8 @@ interface SellerDashboardViewProps {
 
 export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   currentSeller,
+  allSellers,
+  onSelectSeller,
   products,
   enquiries,
   categories,
@@ -37,7 +46,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   onDeleteProduct,
   onUpdateSeller,
 }) => {
-  const [activeTab, setActiveTab] = useState<'products' | 'enquiries' | 'profile'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'enquiries' | 'profile' | 'kyc'>('products');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
@@ -127,6 +136,13 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       .map((a) => a.trim())
       .filter(Boolean);
 
+    if (currentSeller.status !== 'active') {
+      setFormErrors({
+        desc: 'Access Denied: Only approved sellers may publish products on MattoKart. Your shop application is currently Pending Admin Review.',
+      });
+      return;
+    }
+
     if (editingProduct) {
       const updated: Product = {
         ...editingProduct,
@@ -202,13 +218,39 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAddModal}
-          className="px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add New Product</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {allSellers && allSellers.length > 1 && onSelectSeller && (
+            <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-xl text-xs border border-slate-200">
+              <span className="text-slate-500 font-medium">Switch Shop:</span>
+              <select
+                value={currentSeller.id}
+                onChange={(e) => onSelectSeller(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 text-xs"
+              >
+                {allSellers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.shopName} ({s.status === 'active' ? 'Approved' : 'Pending'})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {currentSeller.status === 'active' ? (
+            <button
+              onClick={handleOpenAddModal}
+              className="px-4 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add New Product</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-900 px-3.5 py-2 rounded-xl text-xs font-semibold">
+              <Lock className="w-4 h-4 text-amber-700" />
+              <span>Listing Restricted (Pending Admin Approval)</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Verification & Fee Status Banner */}
@@ -296,11 +338,39 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           <UserCheck className="w-4 h-4" />
           <span>Shop Profile & Coverage</span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('kyc')}
+          className={`pb-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'kyc'
+              ? 'border-orange-600 text-orange-600 font-bold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-orange-500" />
+          <span>
+            Identity KYC (
+            <span className="capitalize">{currentSeller.identityVerificationStatus || 'Pending'}</span>)
+          </span>
+        </button>
       </div>
 
       {/* Tab 1: Products */}
       {activeTab === 'products' && (
         <div className="space-y-4">
+          {currentSeller.status !== 'active' && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-xs text-amber-900 shadow-xs">
+              <AlertCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-sm text-amber-950">
+                  Product Listing Permission Restricted (Pending Admin Approval)
+                </p>
+                <p className="text-amber-800 leading-relaxed text-[11px]">
+                  Under MattoKart safety policies, new shops remain Pending until an authorized administrator verifies the credentials. Only approved and verified sellers may publish live listings. You can view or submit business verification under the <strong>Identity KYC</strong> tab.
+                </p>
+              </div>
+            </div>
+          )}
           {sellerProducts.length === 0 ? (
             <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-4">
               <Package className="w-12 h-12 text-slate-300 mx-auto" />
@@ -488,6 +558,14 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Tab 4: Identity Verification (KYC) */}
+      {activeTab === 'kyc' && (
+        <IdentityVerificationCard
+          seller={currentSeller}
+          onUpdateSeller={onUpdateSeller}
+        />
       )}
 
       {/* Modal: Add / Edit Product */}

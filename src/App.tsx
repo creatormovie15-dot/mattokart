@@ -9,6 +9,8 @@ import {
   BuyerEnquiry,
   SaharanpurLocality,
   LegalDocType,
+  AuthUser,
+  UserRole,
 } from './types';
 import {
   INITIAL_CATEGORIES,
@@ -23,6 +25,7 @@ import { MobileNav } from './components/MobileNav';
 import { LocationModal } from './components/LocationModal';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { EnquiryModal } from './components/EnquiryModal';
+import { AuthModal } from './components/AuthModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -41,6 +44,7 @@ import {
   getSellersFromSupabase,
   submitEnquiryToSupabase,
 } from './lib/supabaseService';
+import { getStoredAuthUser, setStoredAuthUser, logoutUser } from './lib/authClient';
 
 // Safe storage utilities with error immunity
 const safeLoad = <T,>(key: string, fallback: T): T => {
@@ -148,6 +152,35 @@ export default function App() {
 
   // Active seller profile for Seller Dashboard testing
   const [currentSellerId, setCurrentSellerId] = useState<string>('seller-1');
+
+  // User Authentication State (Indian Mobile OTP)
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredAuthUser());
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalRole, setAuthModalRole] = useState<UserRole>('customer');
+
+  const handleOpenAuthModal = (role: UserRole = 'customer') => {
+    setAuthModalRole(role);
+    setIsAuthModalOpen(true);
+  };
+
+  const handleAuthSuccess = (user: AuthUser) => {
+    setCurrentUser(user);
+    setStoredAuthUser(user);
+    addToast(
+      'success',
+      `Namaste, ${user.fullName || user.phone}!`,
+      `Successfully logged in as ${user.role === 'seller' ? 'Seller' : 'Customer'}.`
+    );
+    if (user.role === 'seller' && user.sellerId) {
+      setCurrentSellerId(user.sellerId);
+    }
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+    setCurrentUser(null);
+    addToast('info', 'Logged Out', 'You have been logged out from your MattoKart account.');
+  };
 
   // Modals
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<Product | null>(null);
@@ -285,10 +318,46 @@ export default function App() {
       return updated;
     });
     setCurrentSellerId(newSeller.id);
+
+    // If initial sample product was uploaded, stage it as pending review
+    if (newSeller.initialProduct) {
+      const sampleProd: Product = {
+        id: `prod-${Date.now()}`,
+        name: newSeller.initialProduct.name,
+        categoryId: newSeller.categories[0] || 'furniture',
+        subcategory: 'Artisan Special',
+        price: newSeller.initialProduct.price,
+        unit: newSeller.initialProduct.unit,
+        minOrderQuantity: 1,
+        inStock: true,
+        stockCount: newSeller.initialProduct.stockCount || 5,
+        images: [newSeller.initialProduct.imageUrl || 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=800&q=80'],
+        description: newSeller.initialProduct.description,
+        specifications: {
+          'Origin': 'Saharanpur, UP',
+          'Supplier': newSeller.shopName,
+        },
+        sellerId: newSeller.id,
+        sellerName: newSeller.ownerName,
+        sellerShopName: newSeller.shopName,
+        sellerLocality: newSeller.locality,
+        sellerPhone: newSeller.phone,
+        sellerRating: 5.0,
+        deliveryAreas: ['Saharanpur Local'],
+        status: 'pending', // Staged pending seller approval
+        createdAt: new Date().toISOString().split('T')[0],
+      };
+      setProducts((prev) => {
+        const updated = [sampleProd, ...prev];
+        safeSave('products', updated);
+        return updated;
+      });
+    }
+
     addToast(
       'success',
       'Shop Registration Received',
-      `Application ID: ${newSeller.id}. Pending review by MattoKart admin.`
+      `Application ID: ${newSeller.id}. Pending review by MattoKart Saharanpur administration.`
     );
   };
 
@@ -339,16 +408,44 @@ export default function App() {
   // Admin moderation actions
   const handleApproveSeller = (sellerId: string) => {
     setSellers((prev) => {
-      const updated = prev.map((s) => (s.id === sellerId ? { ...s, status: 'active' as const } : s));
+      const updated = prev.map((s) =>
+        s.id === sellerId
+          ? {
+              ...s,
+              status: 'active' as const,
+              identityVerificationStatus: 'verified' as const,
+              reviewedBy: 'Admin (Saharanpur Trade HQ)',
+              reviewedAt: new Date().toISOString(),
+            }
+          : s
+      );
       safeSave('sellers', updated);
       return updated;
     });
-    addToast('success', 'Seller Approved', 'Shop is now active on MattoKart.');
+    // Auto-approve staged products for this approved seller
+    setProducts((prev) => {
+      const updated = prev.map((p) =>
+        p.sellerId === sellerId && p.status === 'pending'
+          ? { ...p, status: 'approved' as const }
+          : p
+      );
+      safeSave('products', updated);
+      return updated;
+    });
+    addToast('success', 'Seller Approved & Verified', 'Shop is now active on MattoKart with product publishing permissions.');
   };
 
   const handleRejectSeller = (sellerId: string) => {
     setSellers((prev) => {
-      const updated = prev.map((s) => (s.id === sellerId ? { ...s, status: 'suspended' as const } : s));
+      const updated = prev.map((s) =>
+        s.id === sellerId
+          ? {
+              ...s,
+              status: 'pending_approval' as const,
+              identityVerificationStatus: 'rejected' as const,
+            }
+          : s
+      );
       safeSave('sellers', updated);
       return updated;
     });

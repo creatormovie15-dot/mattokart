@@ -71,6 +71,18 @@ CREATE TABLE IF NOT EXISTS public.sellers (
   description TEXT,
   banner_image TEXT,
   shop_logo TEXT,
+  -- Identity Verification & Admin Review
+  identity_verification_status TEXT NOT NULL DEFAULT 'not_started' CHECK (
+    identity_verification_status IN ('not_started', 'pending', 'verified', 'rejected')
+  ),
+  identity_verification_method TEXT CHECK (
+    identity_verification_method IN ('digilocker_authorized', 'gstin_verified', 'trade_license', 'physical_inspection_saharanpur')
+  ),
+  verification_reference_id TEXT, -- Stores DigiLocker ref, GSTIN, or License # (NEVER raw Aadhaar!)
+  verification_rejection_reason TEXT,
+  reviewed_by TEXT,
+  reviewed_at TIMESTAMPTZ,
+  admin_notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
   CONSTRAINT unique_seller_user UNIQUE (user_id)
