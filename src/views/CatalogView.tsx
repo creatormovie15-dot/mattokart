@@ -84,15 +84,13 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         return false;
       }
 
-      // Search query
+      // Search query - multi-token keyword search
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesName = (p.name || '').toLowerCase().includes(q);
-        const matchesDesc = (p.description || '').toLowerCase().includes(q);
-        const matchesSubcat = (p.subcategory || '').toLowerCase().includes(q);
-        const matchesShop = (p.sellerShopName || '').toLowerCase().includes(q);
-        const matchesLoc = (p.sellerLocality || '').toLowerCase().includes(q);
-        if (!matchesName && !matchesDesc && !matchesSubcat && !matchesShop && !matchesLoc) {
+        const q = searchQuery.toLowerCase().trim();
+        const searchTerms = q.split(/\s+/).filter(Boolean);
+        const searchableText = `${p.name || ''} ${p.description || ''} ${p.subcategory || ''} ${p.sellerShopName || ''} ${p.sellerLocality || ''}`.toLowerCase();
+        const matchesAllTerms = searchTerms.every((term) => searchableText.includes(term));
+        if (!matchesAllTerms) {
           return false;
         }
       }
@@ -138,6 +136,18 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     (onlyInStock ? 1 : 0) +
     (onlyWoodcraft ? 1 : 0) +
     (searchQuery.trim() ? 1 : 0);
+
+  // Check if any pending listings match the search query (explaining why they are not yet public)
+  const pendingSearchMatches = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
+    const searchTerms = q.split(/\s+/).filter(Boolean);
+    return products.filter((p) => {
+      if (p.status === 'approved') return false;
+      const searchableText = `${p.name || ''} ${p.description || ''} ${p.subcategory || ''} ${p.sellerShopName || ''} ${p.sellerLocality || ''}`.toLowerCase();
+      return searchTerms.every((term) => searchableText.includes(term));
+    });
+  }, [products, searchQuery]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
@@ -412,6 +422,21 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               >
                 Clear All
               </button>
+            </div>
+          )}
+
+          {/* Pending Verification Notice for Search Queries */}
+          {pendingSearchMatches.length > 0 && (
+            <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-900 shadow-xs">
+              <Sparkles className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-bold text-amber-950">
+                  {pendingSearchMatches.length} matching item{pendingSearchMatches.length > 1 ? 's' : ''} is currently Pending Admin Verification
+                </p>
+                <p className="text-amber-800 leading-relaxed">
+                  "{pendingSearchMatches.map((p) => p.name).join('", "')}" ({pendingSearchMatches[0].sellerShopName}) has been submitted and is currently undergoing Saharanpur merchant verification. Per marketplace security rules, listings only become visible to the public once approved by an administrator.
+                </p>
+              </div>
             </div>
           )}
 

@@ -124,13 +124,18 @@ export async function getSellersFromSupabase(): Promise<Seller[] | null> {
   }
 }
 
+// Helper to check for valid UUID format
+export const isValidUuid = (str: string): boolean => {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+};
+
 // 4. Submit Buyer Enquiry
 export async function submitEnquiryToSupabase(enquiry: BuyerEnquiry): Promise<boolean> {
   if (!supabase || !isSupabaseConfigured) return false;
   try {
     const { error } = await supabase.from('buyer_enquiries').insert({
-      product_id: enquiry.productId,
-      seller_id: enquiry.sellerId,
+      product_id: isValidUuid(enquiry.productId) ? enquiry.productId : null,
+      seller_id: isValidUuid(enquiry.sellerId) ? enquiry.sellerId : null,
       buyer_name: enquiry.buyerName,
       buyer_phone: enquiry.buyerPhone,
       buyer_locality: enquiry.buyerLocality,
@@ -146,11 +151,10 @@ export async function submitEnquiryToSupabase(enquiry: BuyerEnquiry): Promise<bo
 }
 
 // 5. Submit Seller Application (Enforcing ₹0 Free First Year)
-export async function submitSellerApplicationToSupabase(seller: Seller, userId: string): Promise<boolean> {
+export async function submitSellerApplicationToSupabase(seller: Seller, userId?: string): Promise<boolean> {
   if (!supabase || !isSupabaseConfigured) return false;
   try {
-    const { data: sellerRow, error } = await supabase.from('sellers').insert({
-      user_id: userId,
+    const sellerPayload: any = {
       owner_name: seller.ownerName,
       shop_name: seller.shopName,
       phone: seller.phone,
@@ -159,9 +163,9 @@ export async function submitSellerApplicationToSupabase(seller: Seller, userId: 
       locality: seller.locality,
       city: seller.city,
       pin_code: seller.pinCode,
-      landmark: seller.landmark,
+      landmark: seller.landmark || null,
       categories: seller.categories,
-      gst_number: seller.gstNumber,
+      gst_number: seller.gstNumber || null,
       status: 'pending_approval',
       registration_fee_status: 'free_first_year',
       proposed_fee: 0.00, // ₹0 Free First Year
@@ -170,9 +174,21 @@ export async function submitSellerApplicationToSupabase(seller: Seller, userId: 
       identity_verification_status: seller.identityVerificationStatus || 'pending',
       identity_verification_method: seller.identityVerificationMethod || 'gstin_verified',
       verification_reference_id: seller.verificationReferenceId || seller.gstNumber || null,
-    }).select().single();
+    };
 
-    if (error || !sellerRow) return false;
+    if (userId && isValidUuid(userId)) {
+      sellerPayload.user_id = userId;
+    }
+    if (seller.id && isValidUuid(seller.id)) {
+      sellerPayload.id = seller.id;
+    }
+
+    const { data: sellerRow, error } = await supabase.from('sellers').insert(sellerPayload).select().single();
+
+    if (error || !sellerRow) {
+      console.warn('[Supabase] Seller insert failed:', error?.message);
+      return false;
+    }
 
     // Create accompanying shop record
     await supabase.from('shops').insert({
@@ -189,5 +205,145 @@ export async function submitSellerApplicationToSupabase(seller: Seller, userId: 
     return true;
   } catch {
     return false;
+  }
+}
+
+// 6. Save or Insert Product to Supabase
+export async function saveProductToSupabase(product: Product): Promise<{ success: boolean; id?: string; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) {
+    return { success: false, error: 'Supabase is not configured' };
+  }
+  try {
+    const payload: any = {
+      name: product.name,
+      category_id: product.categoryId,
+      subcategory: product.subcategory,
+      price: product.price,
+      original_price: product.originalPrice || null,
+      unit: product.unit,
+      min_order_quantity: product.minOrderQuantity || 1,
+      in_stock: product.inStock,
+      stock_count: product.stockCount,
+      images: product.images,
+      description: product.description,
+      specifications: product.specifications || {},
+      delivery_areas: product.deliveryAreas || [],
+      featured: Boolean(product.featured),
+      is_woodcraft_special: Boolean(product.isWoodcraftSpecial),
+      status: product.status || 'pending',
+    };
+
+    if (product.id && isValidUuid(product.id)) {
+      payload.id = product.id;
+    }
+    if (product.sellerId && isValidUuid(product.sellerId)) {
+      payload.seller_id = product.sellerId;
+    }
+
+    const { data, error } = await supabase.from('products').insert(payload).select().single();
+    if (error) {
+      console.warn('[Supabase] Failed to save product:', error.message);
+      return { success: false, error: error.message };
+    }
+    return { success: true, id: data?.id };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 7. Update Product in Supabase
+export async function updateProductInSupabase(product: Product): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) {
+    return { success: false, error: 'Supabase is not configured' };
+  }
+  if (!isValidUuid(product.id)) {
+    return { success: false, error: 'Local product ID is not a database UUID' };
+  }
+  try {
+    const { error } = await supabase
+      .from('products')
+      .update({
+        name: product.name,
+        category_id: product.categoryId,
+        subcategory: product.subcategory,
+        price: product.price,
+        original_price: product.originalPrice || null,
+        unit: product.unit,
+        in_stock: product.inStock,
+        stock_count: product.stockCount,
+        images: product.images,
+        description: product.description,
+        delivery_areas: product.deliveryAreas,
+        is_woodcraft_special: product.isWoodcraftSpecial,
+        status: product.status,
+      })
+      .eq('id', product.id);
+
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 8. Delete Product from Supabase
+export async function deleteProductFromSupabase(productId: string): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) {
+    return { success: false, error: 'Supabase is not configured' };
+  }
+  if (!isValidUuid(productId)) return { success: false };
+  try {
+    const { error } = await supabase.from('products').delete().eq('id', productId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 9. Moderate Product Status in Supabase (Admin)
+export async function updateProductStatusInSupabase(
+  productId: string,
+  status: 'approved' | 'pending' | 'rejected',
+  rejectionReason?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) return { success: false };
+  if (!isValidUuid(productId)) return { success: false };
+  try {
+    const { error } = await supabase
+      .from('products')
+      .update({
+        status,
+        rejection_reason: rejectionReason || null,
+      })
+      .eq('id', productId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 10. Update Seller Status in Supabase (Admin)
+export async function updateSellerStatusInSupabase(
+  sellerId: string,
+  status: 'active' | 'pending_approval' | 'suspended',
+  verificationStatus?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) return { success: false };
+  if (!isValidUuid(sellerId)) return { success: false };
+  try {
+    const updatePayload: any = { status };
+    if (verificationStatus) {
+      updatePayload.identity_verification_status = verificationStatus;
+    }
+    const { error } = await supabase
+      .from('sellers')
+      .update(updatePayload)
+      .eq('id', sellerId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 }

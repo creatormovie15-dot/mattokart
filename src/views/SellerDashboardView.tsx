@@ -162,7 +162,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       onUpdateProduct(updated);
     } else {
       const newProd: Product = {
-        id: `prod-${Date.now()}`,
+        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `prod-${Date.now()}`,
         name: prodName.trim(),
         categoryId: prodCategory,
         subcategory: prodSubcategory,

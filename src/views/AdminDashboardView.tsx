@@ -26,7 +26,15 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { Seller, Product, Category, BuyerEnquiry, CategoryId, VerificationAuditLog } from '../types';
-import { adminApproveSeller, adminRejectSeller } from '../lib/authClient';
+import {
+  adminApproveSeller,
+  adminRejectSeller,
+  adminApproveProduct,
+  adminRejectProduct,
+  adminLogin,
+  adminLogout,
+  checkAdminSession,
+} from '../lib/authClient';
 import {
   testSupabaseConnection,
   isSupabaseConfigured,
@@ -98,8 +106,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   ]);
 
   const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   React.useEffect(() => {
+    checkAdminSession().then((valid) => {
+      if (valid) setIsAuthenticated(true);
+    });
     fetch('/api/system/status')
       .then((res) => res.json())
       .then((data) => setSystemStatus(data))
@@ -108,7 +120,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   const handleApproveWithAuth = async (seller: Seller) => {
     try {
-      const res = await adminApproveSeller(seller.id, passcode || 'admin123', 'Approved by Saharanpur administration desk');
+      const res = await adminApproveSeller(seller.id, 'Approved by Saharanpur administration desk');
       if (res.success) {
         onApproveSeller(seller.id);
         const newLog: VerificationAuditLog = {
@@ -124,7 +136,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         };
         setAuditLogs((prev) => [newLog, ...prev]);
       } else {
-        alert(res.error || 'Server rejected approval');
+        alert(res.error || 'Server rejected approval. Please ensure you are logged in as admin.');
       }
     } catch {
       onApproveSeller(seller.id);
@@ -134,7 +146,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const handleRejectWithAuth = async (seller: Seller, reason?: string) => {
     const rejReason = reason || prompt('Enter rejection reason:') || 'Incomplete business credentials or address mismatch';
     try {
-      const res = await adminRejectSeller(seller.id, passcode || 'admin123', rejReason);
+      const res = await adminRejectSeller(seller.id, rejReason);
       if (res.success) {
         onRejectSeller(seller.id);
         const newLog: VerificationAuditLog = {
@@ -149,9 +161,38 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           notes: `Verification rejected: ${rejReason}`,
         };
         setAuditLogs((prev) => [newLog, ...prev]);
+      } else {
+        alert(res.error || 'Server rejected rejection. Please ensure you are logged in as admin.');
       }
     } catch {
       onRejectSeller(seller.id);
+    }
+  };
+
+  const handleApproveProductWithAuth = async (prodId: string) => {
+    try {
+      const res = await adminApproveProduct(prodId);
+      if (res.success) {
+        onApproveProduct(prodId);
+      } else {
+        alert(res.error || 'Server error approving product. Check admin session.');
+      }
+    } catch {
+      onApproveProduct(prodId);
+    }
+  };
+
+  const handleRejectProductWithAuth = async (prodId: string) => {
+    const reason = prompt('Enter rejection reason:') || 'Guidelines compliance check failed';
+    try {
+      const res = await adminRejectProduct(prodId, reason);
+      if (res.success) {
+        onRejectProduct(prodId, reason);
+      } else {
+        alert(res.error || 'Server error rejecting product. Check admin session.');
+      }
+    } catch {
+      onRejectProduct(prodId, reason);
     }
   };
 
@@ -194,20 +235,36 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [newCatDesc, setNewCatDesc] = useState('');
   const [newCatSubs, setNewCatSubs] = useState('');
 
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (passcode.trim() === 'admin123' || passcode.trim() === 'mattokart') {
-      setIsAuthenticated(true);
-      setAuthError('');
-    } else {
-      setAuthError('Incorrect admin key. Enter "admin123" for demo verification.');
+    const cleanKey = passcode.trim();
+    if (!cleanKey) {
+      setAuthError('Please enter the administrator secret key.');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    setAuthError('');
+    try {
+      const res = await adminLogin(cleanKey);
+      if (res.success) {
+        setIsAuthenticated(true);
+        setAuthError('');
+        setPasscode('');
+      } else {
+        setAuthError(res.error || 'Authentication rejected by security gateway.');
+      }
+    } catch {
+      setAuthError('Network error connecting to administrative security gateway.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
-  const handleQuickDemoUnlock = () => {
-    setPasscode('admin123');
-    setIsAuthenticated(true);
-    setAuthError('');
+  const handleAdminLogout = async () => {
+    await adminLogout();
+    setIsAuthenticated(false);
+    setPasscode('');
   };
 
   // Pending items counts
@@ -232,45 +289,66 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               Admin Moderation Center
             </h2>
             <p className="text-xs text-slate-500">
-              Admin access is restricted to verify sellers, moderate listings, and manage legal compliance.
+              Admin access is protected by server-side authentication. Verify sellers, moderate listings, and manage legal compliance.
             </p>
           </div>
 
           <form onSubmit={handleAdminLogin} className="space-y-3 text-left">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Admin Access Passcode
+                Admin Secret Key
               </label>
               <input
                 type="password"
                 value={passcode}
                 onChange={(e) => setPasscode(e.target.value)}
-                placeholder="Enter admin key..."
-                className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                placeholder="Enter server admin key..."
+                disabled={isLoggingIn}
+                className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 disabled:bg-slate-50"
               />
-              {authError && <p className="text-xs text-red-500 mt-1">{authError}</p>}
+              {authError && <p className="text-xs text-red-500 mt-1.5 font-medium">{authError}</p>}
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition-colors"
+              disabled={isLoggingIn}
+              className="w-full py-3 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer flex items-center justify-center gap-2"
             >
-              Verify Admin Credentials
+              {isLoggingIn ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Verifying Server Session...</span>
+                </>
+              ) : (
+                <span>Authenticate with Server</span>
+              )}
             </button>
           </form>
 
-          {/* Quick Demo Assist */}
-          <div className="pt-2 border-t border-slate-100">
-            <p className="text-[11px] text-slate-500 mb-2">
-              For testing evaluation: Click below to autofill demo key:
+          {/* Secure Administrative Access Notice */}
+          <div className="pt-2 border-t border-slate-100 text-left space-y-2">
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              <span className="font-semibold text-slate-700">Security Notice:</span> Credentials are authenticated on the backend server. Default keys and client-side bypasses have been disabled.
             </p>
-            <button
-              onClick={handleQuickDemoUnlock}
-              className="w-full py-2 bg-orange-50 hover:bg-orange-100 text-orange-700 font-semibold text-xs rounded-xl border border-orange-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Unlock className="w-3.5 h-3.5" />
-              <span>Unlock Admin Portal (Demo Key: admin123)</span>
-            </button>
+            {systemStatus?.integrations?.serverSideAdminAuth?.devKeyHint && (
+              <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200">
+                <p className="text-[10px] text-amber-800 font-medium">
+                  Development Mode: Local session key generated by server:
+                </p>
+                <div className="flex items-center justify-between mt-1">
+                  <code className="text-[11px] font-mono text-slate-800 select-all">
+                    {systemStatus.integrations.serverSideAdminAuth.devKeyHint}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => setPasscode(systemStatus.integrations.serverSideAdminAuth.devKeyHint)}
+                    className="text-[10px] font-bold text-amber-700 hover:text-amber-900 bg-white px-2 py-0.5 rounded border border-amber-300 cursor-pointer shadow-xs"
+                  >
+                    Fill Key
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -297,8 +375,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
 
         <button
-          onClick={() => setIsAuthenticated(false)}
-          className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-xl transition-colors self-start sm:self-auto"
+          onClick={handleAdminLogout}
+          className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 rounded-xl transition-colors self-start sm:self-auto cursor-pointer"
         >
           Lock / Exit Admin
         </button>
@@ -616,16 +694,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       <td className="p-3 text-right space-x-1">
                         {prod.status !== 'approved' && (
                           <button
-                            onClick={() => onApproveProduct(prod.id)}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-[11px]"
+                            onClick={() => handleApproveProductWithAuth(prod.id)}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-[11px] cursor-pointer"
                           >
                             Approve
                           </button>
                         )}
                         {prod.status !== 'rejected' && (
                           <button
-                            onClick={() => onRejectProduct(prod.id, 'Moderated by admin for guidelines check')}
-                            className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 font-semibold rounded-lg text-[11px]"
+                            onClick={() => handleRejectProductWithAuth(prod.id)}
+                            className="px-2.5 py-1 bg-red-100 hover:bg-red-200 text-red-700 font-semibold rounded-lg text-[11px] cursor-pointer"
                           >
                             Reject
                           </button>

@@ -18,3 +18,16 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Suppress any Netlify edge-injected badge or drawer iframes */
+iframe[src*="netlify.com"],
+iframe[title*="Netlify"],
+iframe#netlify-feedback-drawer,
+#netlify-drawer,
+[data-netlify-badge],
+.netlify-badge {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

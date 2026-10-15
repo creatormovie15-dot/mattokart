@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 
@@ -48,21 +49,64 @@ const userSessions = new Map<
   }
 >();
 
-// Admin key check
-const ADMIN_SECRET = process.env.ADMIN_SECRET_KEY || 'admin123';
+// ============================================================================
+// SERVER-SIDE ADMIN AUTHENTICATION & SECURE SESSION STORE
+// ============================================================================
+
+interface AdminSession {
+  token: string;
+  role: 'admin';
+  createdAt: number;
+  expiresAt: number;
+  ip: string;
+}
+
+const adminSessions = new Map<string, AdminSession>();
+const adminLoginAttempts = new Map<string, { attempts: number; blockedUntil?: number }>();
+
+// Strict security rule: Read strictly from environment.
+// In non-production development mode ONLY, generate a dynamic random dev key if ADMIN_SECRET_KEY is not set.
+let DEV_SANDBOX_ADMIN_KEY = '';
+if (!isProduction && !process.env.ADMIN_SECRET_KEY) {
+  DEV_SANDBOX_ADMIN_KEY = 'mkt-dev-' + crypto.randomBytes(8).toString('hex');
+  console.log(`[AUTH-ADMIN] Local Development: Temporary dev admin key generated: [${DEV_SANDBOX_ADMIN_KEY}]`);
+}
+
+const ADMIN_SECRET = process.env.ADMIN_SECRET_KEY ? process.env.ADMIN_SECRET_KEY.trim() : DEV_SANDBOX_ADMIN_KEY;
+
+// Prohibited weak default passwords and bypass keys
+const PROHIBITED_KEYS = new Set(['admin123', 'mattokart', 'admin', 'password', '123456', 'root', 'qwerty']);
 
 const verifyAdminAuth = (req: Request, res: Response, next: NextFunction): void => {
-  const adminKey =
-    req.headers['x-admin-key'] ||
-    (req.headers.authorization && req.headers.authorization.replace('Bearer ', ''));
-
-  if (!adminKey || (adminKey !== ADMIN_SECRET && adminKey !== 'mattokart')) {
-    res.status(403).json({
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({
       success: false,
-      error: 'Access Denied: Server-side admin authorization failed. Invalid admin key.',
+      error: 'Access Denied: Server-side admin authorization required. Bearer session token missing.',
     });
     return;
   }
+
+  const token = authHeader.replace('Bearer ', '').trim();
+  const session = adminSessions.get(token);
+
+  if (!session) {
+    res.status(401).json({
+      success: false,
+      error: 'Access Denied: Invalid or expired admin session token.',
+    });
+    return;
+  }
+
+  if (Date.now() > session.expiresAt) {
+    adminSessions.delete(token);
+    res.status(401).json({
+      success: false,
+      error: 'Admin session has expired. Please log in again.',
+    });
+    return;
+  }
+
   next();
 };
 
@@ -209,18 +253,30 @@ app.post('/api/auth/send-otp', checkOtpRateLimit, async (req: Request, res: Resp
         expiresInSeconds: 300,
       });
     } else {
-      // Credentials not yet configured:
-      // STRICT REQUIREMENT: Clearly distinguish completed features from missing API credentials.
-      // Do not falsely claim real SMS was dispatched. Provide transparent developer sandbox info.
-      console.log(`[AUTH-SANDBOX] OTP generated for ${internationalPhone}: [${otpCode}] (Live SMS Gateway awaiting credentials)`);
+      if (isProduction) {
+        // SECURITY REQUIREMENT 4 & 5:
+        // Disable demo OTP codes in production responses.
+        // If real SMS credentials are missing in production, fail safely instead of allowing demo authentication.
+        console.warn(`[AUTH-PRODUCTION-ALERT] SMS request to ${internationalPhone} rejected: Live SMS credentials not configured in production.`);
+        res.status(503).json({
+          success: false,
+          providerConfigured: false,
+          error: 'SMS service is unavailable: Live SMS gateway credentials (TWILIO or MSG91) are not configured in production.',
+          message: 'Live SMS provider required in production.',
+        });
+        return;
+      }
+
+      // Development Sandbox mode ONLY (Never executed in production)
+      console.log(`[AUTH-SANDBOX] [DEV-ONLY] OTP generated for ${internationalPhone}: [${otpCode}]`);
       res.json({
         success: true,
         providerConfigured: false,
         sandboxMode: true,
         formattedPhone: phoneCheck.formatted,
-        message: `Live SMS provider not configured in environment. Developer testing code generated for Saharanpur test.`,
+        message: `Live SMS provider not configured in environment. Local developer test code generated.`,
         developerNotice: `To enable live SMS delivery across India, configure TWILIO_ACCOUNT_SID or MSG91_AUTH_KEY in .env.`,
-        testOtpCode: otpCode, // Provided explicitly for sandbox verification testing
+        testOtpCode: otpCode, // Only returned in non-production local development
         cooldownSeconds: 60,
         expiresInSeconds: 300,
       });
@@ -238,6 +294,19 @@ app.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
 
     if (!phoneCheck.isValid) {
       res.status(400).json({ success: false, error: phoneCheck.error });
+      return;
+    }
+
+    const hasTwilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER);
+    const hasMsg91 = Boolean(process.env.MSG91_AUTH_KEY);
+    const hasSupabaseService = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.VITE_SUPABASE_URL);
+    const providerConfigured = hasTwilio || hasMsg91 || hasSupabaseService;
+
+    if (isProduction && !providerConfigured) {
+      res.status(503).json({
+        success: false,
+        error: 'Authentication is unavailable: Live SMS gateway credentials must be configured in production.',
+      });
       return;
     }
 
@@ -402,10 +471,124 @@ app.post('/api/sellers/:id/verify-identity', (req: Request, res: Response) => {
 });
 
 // ============================================================================
-// API ROUTES: ADMIN APPROVALS & SERVER-SIDE AUTHORIZATION
+// API ROUTES: ADMIN AUTHENTICATION, APPROVALS & SERVER-SIDE AUTHORIZATION
 // ============================================================================
 
-// Approve Seller (Protected by server-side admin key check)
+// 1. Admin Login (Secure timing-safe comparison, rejects default/weak keys, returns Bearer token)
+app.post('/api/admin/login', (req: Request, res: Response) => {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const rateRecord = adminLoginAttempts.get(ip) || { attempts: 0 };
+
+  if (rateRecord.blockedUntil && now < rateRecord.blockedUntil) {
+    const waitSecs = Math.ceil((rateRecord.blockedUntil - now) / 1000);
+    res.status(429).json({
+      success: false,
+      error: `Too many failed admin login attempts. Please wait ${waitSecs} seconds before retrying.`,
+      retryAfterSeconds: waitSecs,
+    });
+    return;
+  }
+
+  const { secretKey, password } = req.body;
+  const providedKey = String(secretKey || password || '').trim();
+
+  if (!providedKey) {
+    res.status(400).json({ success: false, error: 'Administrator secret key is required.' });
+    return;
+  }
+
+  // Strictly reject hardcoded/prohibited default keys
+  if (PROHIBITED_KEYS.has(providedKey.toLowerCase())) {
+    res.status(400).json({
+      success: false,
+      error: 'Security Error: Default insecure keys ("admin123", "mattokart", etc.) are strictly prohibited and disabled.',
+    });
+    return;
+  }
+
+  // Ensure ADMIN_SECRET_KEY is configured in the environment
+  if (!ADMIN_SECRET) {
+    res.status(500).json({
+      success: false,
+      error: 'Server configuration error: ADMIN_SECRET_KEY environment variable is not configured. Admin access is disabled.',
+    });
+    return;
+  }
+
+  // Timing-safe comparison to prevent timing side-channel attacks
+  const providedBuffer = Buffer.from(providedKey);
+  const secretBuffer = Buffer.from(ADMIN_SECRET);
+
+  let isMatch = false;
+  if (providedBuffer.length === secretBuffer.length) {
+    isMatch = crypto.timingSafeEqual(providedBuffer, secretBuffer);
+  }
+
+  if (!isMatch) {
+    rateRecord.attempts += 1;
+    if (rateRecord.attempts >= 5) {
+      rateRecord.blockedUntil = now + 15 * 60 * 1000; // 15-minute lockout
+    }
+    adminLoginAttempts.set(ip, rateRecord);
+
+    res.status(401).json({
+      success: false,
+      error: 'Invalid administrator credentials. Access denied.',
+    });
+    return;
+  }
+
+  // Successful authentication: generate secure 64-character hex session token
+  adminLoginAttempts.delete(ip);
+  const token = `mkt_adm_${crypto.randomBytes(32).toString('hex')}`;
+  const sessionDuration = 8 * 60 * 60 * 1000; // 8 hours
+
+  adminSessions.set(token, {
+    token,
+    role: 'admin',
+    createdAt: now,
+    expiresAt: now + sessionDuration,
+    ip,
+  });
+
+  res.json({
+    success: true,
+    token,
+    role: 'admin',
+    expiresInSeconds: 28800,
+    message: 'Administrator authenticated successfully.',
+  });
+});
+
+// 2. Admin Logout
+app.post('/api/admin/logout', (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.replace('Bearer ', '').trim();
+    adminSessions.delete(token);
+  }
+  res.json({ success: true, message: 'Admin logged out successfully' });
+});
+
+// 3. Admin Session Verification
+app.get('/api/admin/session', (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ authenticated: false, error: 'No active session' });
+    return;
+  }
+  const token = authHeader.replace('Bearer ', '').trim();
+  const session = adminSessions.get(token);
+  if (!session || Date.now() > session.expiresAt) {
+    if (session) adminSessions.delete(token);
+    res.status(401).json({ authenticated: false, error: 'Session expired or invalid' });
+    return;
+  }
+  res.json({ authenticated: true, role: 'admin' });
+});
+
+// 4. Approve Seller (Protected by server-side Bearer session token)
 app.post('/api/admin/sellers/:id/approve', verifyAdminAuth, (req: Request, res: Response) => {
   const { id } = req.params;
   const { adminNotes } = req.body;
@@ -522,8 +705,10 @@ app.get('/api/system/status', (_req: Request, res: Response) => {
         note: hasKyc ? 'Live DigiLocker partner active' : 'Compliant GSTIN & Saharanpur Shop Inspection active',
       },
       serverSideAdminAuth: {
-        configured: true,
+        configured: Boolean(process.env.ADMIN_SECRET_KEY || DEV_SANDBOX_ADMIN_KEY),
         enforced: true,
+        isDevelopmentFallback: Boolean(!isProduction && !process.env.ADMIN_SECRET_KEY),
+        devKeyHint: !isProduction && !process.env.ADMIN_SECRET_KEY ? DEV_SANDBOX_ADMIN_KEY : undefined,
       },
     },
   });

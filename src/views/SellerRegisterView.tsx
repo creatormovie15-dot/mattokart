@@ -224,7 +224,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
       refId = `DL-SANDBOX-${Date.now()}`;
     }
 
-    const sellerId = `seller-${Date.now()}`;
+    const sellerId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `seller-${Date.now()}`;
     const newSeller: Seller = {
       id: sellerId,
       ownerName: ownerName.trim(),

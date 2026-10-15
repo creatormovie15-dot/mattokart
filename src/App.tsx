@@ -43,6 +43,12 @@ import {
   getProductsFromSupabase,
   getSellersFromSupabase,
   submitEnquiryToSupabase,
+  submitSellerApplicationToSupabase,
+  saveProductToSupabase,
+  updateProductInSupabase,
+  deleteProductFromSupabase,
+  updateProductStatusInSupabase,
+  updateSellerStatusInSupabase,
 } from './lib/supabaseService';
 import { getStoredAuthUser, setStoredAuthUser, logoutUser } from './lib/authClient';
 
@@ -101,6 +107,9 @@ export default function App() {
       }
       if (cat) {
         setCatalogCategory(cat as CategoryId);
+      } else if (q !== null && q !== undefined) {
+        // When searching globally from URL without an explicit category, search across all categories
+        setCatalogCategory('all');
       }
       if (special === 'woodcraft') {
         setCatalogCategory('furniture');
@@ -200,8 +209,23 @@ export default function App() {
         ]);
         if (!isMounted) return;
         if (cloudCats && cloudCats.length > 0) setCategories(cloudCats);
-        if (cloudProds && cloudProds.length > 0) setProducts(cloudProds);
-        if (cloudSellers && cloudSellers.length > 0) setSellers(cloudSellers);
+        if (cloudProds && cloudProds.length > 0) {
+          setProducts((currentProds) => {
+            const cloudIds = new Set(cloudProds.map((p) => p.id));
+            // Keep local products that are not yet in Supabase (e.g. pending review or local additions)
+            const localOnly = currentProds.filter(
+              (p) => !cloudIds.has(p.id) && (p.status === 'pending' || p.recentlyAdded || p.id.startsWith('prod-'))
+            );
+            return [...localOnly, ...cloudProds];
+          });
+        }
+        if (cloudSellers && cloudSellers.length > 0) {
+          setSellers((currentSellers) => {
+            const cloudIds = new Set(cloudSellers.map((s) => s.id));
+            const localOnly = currentSellers.filter((s) => !cloudIds.has(s.id));
+            return [...localOnly, ...cloudSellers];
+          });
+        }
       } catch {
         // Fallback safely to initial/local storage data
       }
@@ -263,6 +287,7 @@ export default function App() {
   const handlePerformSearch = (query: string) => {
     const q = query.trim();
     setSearchQuery(q);
+    setCatalogCategory('all'); // Reset category so search finds products in all categories
     setActiveTab('catalog');
     if (q) {
       navigate(`/products?search=${encodeURIComponent(q)}`);
@@ -319,10 +344,17 @@ export default function App() {
     });
     setCurrentSellerId(newSeller.id);
 
+    // Persist seller application to Supabase if configured
+    if (isSupabaseConfigured) {
+      submitSellerApplicationToSupabase(newSeller, currentUser?.id).catch((err) => {
+        console.warn('[Supabase] Seller registration sync error:', err);
+      });
+    }
+
     // If initial sample product was uploaded, stage it as pending review
     if (newSeller.initialProduct) {
       const sampleProd: Product = {
-        id: `prod-${Date.now()}`,
+        id: crypto.randomUUID ? crypto.randomUUID() : `prod-${Date.now()}`,
         name: newSeller.initialProduct.name,
         categoryId: newSeller.categories[0] || 'furniture',
         subcategory: 'Artisan Special',
@@ -352,6 +384,11 @@ export default function App() {
         safeSave('products', updated);
         return updated;
       });
+
+      // Also persist initial sample product to Supabase if configured
+      if (isSupabaseConfigured) {
+        saveProductToSupabase(sampleProd).catch(() => {});
+      }
     }
 
     addToast(
@@ -375,6 +412,23 @@ export default function App() {
       safeSave('categories', updated);
       return updated;
     });
+
+    // Save newly created product to Supabase
+    if (isSupabaseConfigured) {
+      saveProductToSupabase(newProd)
+        .then((res) => {
+          if (res.success && res.id && res.id !== newProd.id) {
+            // Update local ID with generated Supabase database UUID
+            setProducts((prev) =>
+              prev.map((p) => (p.id === newProd.id ? { ...p, id: res.id! } : p))
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn('[Supabase] Product save error:', err);
+        });
+    }
+
     addToast('success', 'Product Published!', `${newProd.name} is now listed in the catalog.`);
   };
 
@@ -384,6 +438,14 @@ export default function App() {
       safeSave('products', updated);
       return updated;
     });
+
+    // Update product in Supabase
+    if (isSupabaseConfigured) {
+      updateProductInSupabase(updatedProd).catch((err) => {
+        console.warn('[Supabase] Product update error:', err);
+      });
+    }
+
     addToast('info', 'Product Updated', `${updatedProd.name} details have been saved.`);
   };
 
@@ -393,6 +455,14 @@ export default function App() {
       safeSave('products', updated);
       return updated;
     });
+
+    // Delete product from Supabase
+    if (isSupabaseConfigured) {
+      deleteProductFromSupabase(productId).catch((err) => {
+        console.warn('[Supabase] Product delete error:', err);
+      });
+    }
+
     addToast('info', 'Product Deleted', 'Listing removed from marketplace.');
   };
 
@@ -432,6 +502,12 @@ export default function App() {
       safeSave('products', updated);
       return updated;
     });
+
+    // Sync approval to Supabase
+    if (isSupabaseConfigured) {
+      updateSellerStatusInSupabase(sellerId, 'active', 'verified').catch(() => {});
+    }
+
     addToast('success', 'Seller Approved & Verified', 'Shop is now active on MattoKart with product publishing permissions.');
   };
 
@@ -449,6 +525,11 @@ export default function App() {
       safeSave('sellers', updated);
       return updated;
     });
+
+    if (isSupabaseConfigured) {
+      updateSellerStatusInSupabase(sellerId, 'pending_approval', 'rejected').catch(() => {});
+    }
+
     addToast('info', 'Application Rejected', 'Seller application was declined.');
   };
 
@@ -457,6 +538,9 @@ export default function App() {
       const updated = prev.map((s) => {
         if (s.id === sellerId) {
           const nextStatus = s.status === 'suspended' ? ('active' as const) : ('suspended' as const);
+          if (isSupabaseConfigured) {
+            updateSellerStatusInSupabase(sellerId, nextStatus).catch(() => {});
+          }
           return { ...s, status: nextStatus };
         }
         return s;
@@ -473,6 +557,11 @@ export default function App() {
       safeSave('products', updated);
       return updated;
     });
+
+    if (isSupabaseConfigured) {
+      updateProductStatusInSupabase(productId, 'approved').catch(() => {});
+    }
+
     addToast('success', 'Listing Approved', 'Product is now live in marketplace.');
   };
 
@@ -484,6 +573,11 @@ export default function App() {
       safeSave('products', updated);
       return updated;
     });
+
+    if (isSupabaseConfigured) {
+      updateProductStatusInSupabase(productId, 'rejected', reason).catch(() => {});
+    }
+
     addToast('error', 'Listing Rejected', 'Product has been disapproved.');
   };
 
