@@ -1,0 +1,10 @@
+{
+  "name": "MattoKart",
+  "short_name": "MattoKart",
+  "description": "MattoKart — Sab Kuch, Ek Hi Jagah! Discover products and shops in one place.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1565C0"
+}
