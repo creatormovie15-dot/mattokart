@@ -26,6 +26,8 @@ interface CatalogViewProps {
   setSearchQuery: (q: string) => void;
   onViewProductDetails: (product: Product) => void;
   onContactSeller: (product: Product) => void;
+  onAddToCart?: (product: Product, quantity?: number) => void;
+  onBuyNow?: (product: Product, quantity?: number) => void;
   currentLocality: SaharanpurLocality;
 }
 
@@ -38,6 +40,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   setSearchQuery,
   onViewProductDetails,
   onContactSeller,
+  onAddToCart,
+  onBuyNow,
   currentLocality,
 }) => {
   const [selectedLocalityFilter, setSelectedLocalityFilter] = useState<string>('all');
@@ -470,6 +474,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   product={product}
                   onViewDetails={onViewProductDetails}
                   onContactSeller={onContactSeller}
+                  onAddToCart={onAddToCart}
+                  onBuyNow={onBuyNow}
                 />
               ))}
             </div>

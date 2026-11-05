@@ -151,11 +151,71 @@ export interface SaharanpurLocality {
   areaType: 'Urban Market' | 'Commercial Hub' | 'Industrial Zone' | 'Sub-division / Tehsil';
 }
 
+export interface CartItem {
+  productId: string;
+  product: Product;
+  quantity: number;
+  selectedUnit: UnitType;
+}
+
+export type OrderStatus =
+  | 'placed'
+  | 'confirmed'
+  | 'processing'
+  | 'out_for_delivery'
+  | 'delivered'
+  | 'cancelled';
+
+export type PaymentMethod = 'cod' | 'pay_on_delivery' | 'upi_on_delivery' | 'offline_direct';
+
+export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded';
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  sellerId: string;
+  sellerShopName?: string;
+  productName: string;
+  productImage: string;
+  unitPrice: number;
+  quantity: number;
+  unit: UnitType;
+  totalPrice: number;
+  itemStatus: 'pending' | 'confirmed' | 'ready_for_pickup' | 'shipped' | 'delivered' | 'cancelled';
+  createdAt: string;
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string;
+  customerId?: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  deliveryAddress: string;
+  locality: string;
+  city: string;
+  state?: string;
+  pinCode: string;
+  totalAmount: number;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  orderStatus: OrderStatus;
+  notes?: string;
+  items: OrderItem[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
 export type ActiveTab =
   | 'home'
   | 'catalog'
   | 'shops'
   | 'enquiries'
+  | 'cart'
+  | 'checkout'
+  | 'orders'
   | 'seller-register'
   | 'seller-dashboard'
   | 'admin-dashboard'
@@ -168,3 +228,4 @@ export type LegalDocType =
   | 'terms'
   | 'seller-agreement'
   | 'returns-refunds';
+

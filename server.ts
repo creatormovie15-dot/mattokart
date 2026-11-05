@@ -678,6 +678,420 @@ app.post('/api/products/validate-publish-permission', (req: Request, res: Respon
   });
 });
 
+// ============================================================================
+// API ROUTES: E-COMMERCE ORDERS & MULTI-VENDOR FULFILMENT
+// ============================================================================
+
+interface ServerOrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  sellerId: string;
+  sellerShopName?: string;
+  productName: string;
+  productImage: string;
+  unitPrice: number;
+  quantity: number;
+  unit: string;
+  totalPrice: number;
+  itemStatus: 'pending' | 'confirmed' | 'ready_for_pickup' | 'shipped' | 'delivered' | 'cancelled';
+  createdAt: string;
+}
+
+interface ServerOrder {
+  id: string;
+  orderNumber: string;
+  customerId?: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  deliveryAddress: string;
+  locality: string;
+  city: string;
+  state: string;
+  pinCode: string;
+  totalAmount: number;
+  paymentMethod: 'cod' | 'pay_on_delivery' | 'upi_on_delivery' | 'offline_direct';
+  paymentStatus: 'pending' | 'completed' | 'failed' | 'refunded';
+  orderStatus: 'placed' | 'confirmed' | 'processing' | 'out_for_delivery' | 'delivered' | 'cancelled';
+  notes?: string;
+  items: ServerOrderItem[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+const serverOrders = new Map<string, ServerOrder>();
+
+// Pre-seed sample orders for initial testing
+const initialOrdersSeed: ServerOrder[] = [
+  {
+    id: 'ord-1001',
+    orderNumber: 'MKT-247001-8901',
+    customerId: 'user-9876543210',
+    customerName: 'Aman Singhal',
+    customerPhone: '+91 98765 43210',
+    customerEmail: 'aman.singhal@example.com',
+    deliveryAddress: 'House #42, Lane 3, Near Civil Court, Court Road',
+    locality: 'Court Road',
+    city: 'Saharanpur',
+    state: 'Uttar Pradesh',
+    pinCode: '247001',
+    totalAmount: 18500,
+    paymentMethod: 'cod',
+    paymentStatus: 'pending',
+    orderStatus: 'confirmed',
+    notes: 'Please call before delivering in the evening.',
+    items: [
+      {
+        id: 'item-101',
+        orderId: 'ord-1001',
+        productId: 'prod-1',
+        sellerId: 'seller-1',
+        sellerShopName: 'Noor Handicrafts & Saharanpur Woodcrafts',
+        productName: 'Handcrafted Sheesham Wood Pooja Mandir with Intricate Brass Inlay',
+        productImage: 'https://images.unsplash.com/photo-1544457070-4cd773b4d71e?auto=format&fit=crop&w=800&q=80',
+        unitPrice: 18500,
+        quantity: 1,
+        unit: 'piece',
+        totalPrice: 18500,
+        itemStatus: 'confirmed',
+        createdAt: '2024-10-18T11:00:00Z',
+      },
+    ],
+    createdAt: '2024-10-18T11:00:00Z',
+    updatedAt: '2024-10-18T11:30:00Z',
+  },
+  {
+    id: 'ord-1002',
+    orderNumber: 'MKT-247001-8902',
+    customerId: 'user-9897044556',
+    customerName: 'Rajesh Verma',
+    customerPhone: '+91 98970 44556',
+    deliveryAddress: 'Opposite PNB Bank, Clock Tower Market',
+    locality: 'Clock Tower (Ghanta Ghar)',
+    city: 'Saharanpur',
+    state: 'Uttar Pradesh',
+    pinCode: '247001',
+    totalAmount: 9600,
+    paymentMethod: 'cod',
+    paymentStatus: 'completed',
+    orderStatus: 'delivered',
+    notes: 'Delivered safely at shop premise.',
+    items: [
+      {
+        id: 'item-102',
+        orderId: 'ord-1002',
+        productId: 'prod-2',
+        sellerId: 'seller-1',
+        sellerShopName: 'Noor Handicrafts & Saharanpur Woodcrafts',
+        productName: 'Royal Floral Carved Sheesham Wooden Partition Screen (4 Panels)',
+        productImage: 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=800&q=80',
+        unitPrice: 9600,
+        quantity: 1,
+        unit: 'piece',
+        totalPrice: 9600,
+        itemStatus: 'delivered',
+        createdAt: '2024-10-15T14:20:00Z',
+      },
+    ],
+    createdAt: '2024-10-15T14:20:00Z',
+    updatedAt: '2024-10-16T16:00:00Z',
+  },
+  {
+    id: 'ord-1003',
+    orderNumber: 'MKT-247002-8903',
+    customerId: 'user-9876543210',
+    customerName: 'Aman Singhal',
+    customerPhone: '+91 98765 43210',
+    deliveryAddress: 'Plot 18, Commercial Belt, Delhi Road Highway',
+    locality: 'Delhi Road (Highway bypass)',
+    city: 'Saharanpur',
+    state: 'Uttar Pradesh',
+    pinCode: '247002',
+    totalAmount: 8470,
+    paymentMethod: 'cod',
+    paymentStatus: 'pending',
+    orderStatus: 'placed',
+    notes: 'Bulk construction sample. Verify stock with driver.',
+    items: [
+      {
+        id: 'item-103',
+        orderId: 'ord-1003',
+        productId: 'prod-4',
+        sellerId: 'seller-2',
+        sellerShopName: 'Aggarwal Building Materials & Steel Traders',
+        productName: 'UltraTech Super Weather Plus Cement (50 Kg Bag)',
+        productImage: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=800&q=80',
+        unitPrice: 385,
+        quantity: 20,
+        unit: 'bag',
+        totalPrice: 7700,
+        itemStatus: 'pending',
+        createdAt: '2024-10-20T09:15:00Z',
+      },
+      {
+        id: 'item-104',
+        orderId: 'ord-1003',
+        productId: 'prod-6',
+        sellerId: 'seller-3',
+        sellerShopName: 'Garg Hardware, Power Tools & Sanitary Store',
+        productName: 'Bosch GSB 550 Heavy Duty 13mm Impact Drill Machine Kit',
+        productImage: 'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=800&q=80',
+        unitPrice: 770,
+        quantity: 1,
+        unit: 'piece',
+        totalPrice: 770,
+        itemStatus: 'pending',
+        createdAt: '2024-10-20T09:15:00Z',
+      },
+    ],
+    createdAt: '2024-10-20T09:15:00Z',
+    updatedAt: '2024-10-20T09:15:00Z',
+  },
+];
+
+initialOrdersSeed.forEach((o) => serverOrders.set(o.id, o));
+
+// 1. Create Order (Checkout)
+app.post('/api/orders', (req: Request, res: Response) => {
+  try {
+    const {
+      customerId,
+      customerName,
+      customerPhone: rawPhone,
+      customerEmail,
+      deliveryAddress,
+      locality,
+      pinCode,
+      paymentMethod = 'cod',
+      notes,
+      items,
+    } = req.body;
+
+    if (!customerName || !customerName.trim()) {
+      res.status(400).json({ success: false, error: 'Customer name is required' });
+      return;
+    }
+
+    const phoneCheck = validateIndianPhoneNumber(String(rawPhone));
+    if (!phoneCheck.isValid) {
+      res.status(400).json({ success: false, error: phoneCheck.error });
+      return;
+    }
+
+    if (!deliveryAddress || !deliveryAddress.trim()) {
+      res.status(400).json({ success: false, error: 'Complete delivery address is required' });
+      return;
+    }
+
+    if (!pinCode || !/^\d{6}$/.test(String(pinCode).trim())) {
+      res.status(400).json({ success: false, error: 'Valid 6-digit PIN code is required (e.g. 247001)' });
+      return;
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ success: false, error: 'Your shopping cart is empty' });
+      return;
+    }
+
+    const orderId = `ord-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const cleanPin = String(pinCode).trim();
+    const orderNumber = `MKT-${cleanPin}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    let computedTotal = 0;
+    const orderItems: ServerOrderItem[] = items.map((item: any, idx: number) => {
+      const quantity = Math.max(1, Number(item.quantity) || 1);
+      const unitPrice = Math.max(0, Number(item.unitPrice) || 0);
+      const lineTotal = quantity * unitPrice;
+      computedTotal += lineTotal;
+
+      return {
+        id: `item-${Date.now()}-${idx}`,
+        orderId,
+        productId: item.productId || `prod-${idx}`,
+        sellerId: item.sellerId || 'seller-1',
+        sellerShopName: item.sellerShopName || 'Saharanpur Merchant',
+        productName: item.productName || 'Marketplace Item',
+        productImage: item.productImage || '',
+        unitPrice,
+        quantity,
+        unit: item.unit || 'piece',
+        totalPrice: lineTotal,
+        itemStatus: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+    });
+
+    const newOrder: ServerOrder = {
+      id: orderId,
+      orderNumber,
+      customerId: customerId || undefined,
+      customerName: customerName.trim(),
+      customerPhone: phoneCheck.formatted,
+      customerEmail: customerEmail ? String(customerEmail).trim() : undefined,
+      deliveryAddress: deliveryAddress.trim(),
+      locality: locality ? String(locality).trim() : 'Saharanpur Central',
+      city: 'Saharanpur',
+      state: 'Uttar Pradesh',
+      pinCode: cleanPin,
+      totalAmount: computedTotal,
+      paymentMethod: paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'cod',
+      paymentStatus: 'pending',
+      orderStatus: 'placed',
+      notes: notes ? String(notes).trim() : undefined,
+      items: orderItems,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    serverOrders.set(orderId, newOrder);
+
+    console.log(`[ORDER-CREATED] Order #${orderNumber} created for ${customerName} (Total: ₹${computedTotal}, COD)`);
+
+    res.status(201).json({
+      success: true,
+      order: newOrder,
+      message: `Order #${orderNumber} placed successfully! Cash on Delivery verified.`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to place order' });
+  }
+});
+
+// 2. Get Orders (with filtering for customer, seller, or admin)
+app.get('/api/orders', (req: Request, res: Response) => {
+  try {
+    const { customerId, sellerId, customerPhone } = req.query;
+    let ordersList = Array.from(serverOrders.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    // If filtered by customer ID or phone
+    if (customerId) {
+      ordersList = ordersList.filter((o) => o.customerId === String(customerId));
+    } else if (customerPhone) {
+      const cleanDigits = String(customerPhone).replace(/\D/g, '');
+      ordersList = ordersList.filter((o) => o.customerPhone.replace(/\D/g, '').includes(cleanDigits));
+    }
+
+    // If filtered by seller ID (strict RLS rule: seller only sees orders containing their items, and only their items)
+    if (sellerId) {
+      const targetSellerId = String(sellerId);
+      ordersList = ordersList
+        .map((order) => {
+          const sellerItems = order.items.filter((item) => item.sellerId === targetSellerId);
+          if (sellerItems.length === 0) return null;
+          return {
+            ...order,
+            items: sellerItems,
+          };
+        })
+        .filter((o): o is ServerOrder => o !== null);
+    }
+
+    res.json({
+      success: true,
+      orders: ordersList,
+      count: ordersList.length,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to fetch orders' });
+  }
+});
+
+// 3. Update Order Status (Seller or Admin)
+app.patch('/api/orders/:id/status', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, sellerId, itemStatus, notes } = req.body;
+
+    const order = serverOrders.get(id);
+    if (!order) {
+      res.status(404).json({ success: false, error: 'Order not found' });
+      return;
+    }
+
+    const validStatuses = ['placed', 'confirmed', 'processing', 'out_for_delivery', 'delivered', 'cancelled'];
+    if (status && !validStatuses.includes(status)) {
+      res.status(400).json({ success: false, error: `Invalid order status: ${status}` });
+      return;
+    }
+
+    if (status) {
+      order.orderStatus = status;
+    }
+
+    // If seller updated their specific items
+    if (sellerId && itemStatus) {
+      order.items = order.items.map((item) =>
+        item.sellerId === sellerId ? { ...item, itemStatus } : item
+      );
+    } else if (status === 'cancelled') {
+      order.items = order.items.map((item) => ({ ...item, itemStatus: 'cancelled' }));
+    } else if (status === 'delivered') {
+      order.items = order.items.map((item) => ({ ...item, itemStatus: 'delivered' }));
+      order.paymentStatus = 'completed';
+    }
+
+    if (notes) {
+      order.notes = notes;
+    }
+    order.updatedAt = new Date().toISOString();
+    serverOrders.set(id, order);
+
+    res.json({
+      success: true,
+      order,
+      message: `Order status updated to ${order.orderStatus}`,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to update order' });
+  }
+});
+
+// 4. Cancel Order (Customer or Admin)
+app.post('/api/orders/:id/cancel', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason = 'Cancelled by customer' } = req.body;
+
+    const order = serverOrders.get(id);
+    if (!order) {
+      res.status(404).json({ success: false, error: 'Order not found' });
+      return;
+    }
+
+    // Strict cancellation rule: can only cancel if placed or confirmed
+    if (order.orderStatus === 'out_for_delivery' || order.orderStatus === 'delivered') {
+      res.status(400).json({
+        success: false,
+        error: `Order cannot be cancelled because it is already ${order.orderStatus.replace('_', ' ')}. Please contact support for assistance.`,
+      });
+      return;
+    }
+
+    if (order.orderStatus === 'cancelled') {
+      res.status(400).json({ success: false, error: 'Order is already cancelled' });
+      return;
+    }
+
+    order.orderStatus = 'cancelled';
+    order.notes = order.notes ? `${order.notes} | Cancellation Reason: ${reason}` : `Cancellation Reason: ${reason}`;
+    order.items = order.items.map((item) => ({ ...item, itemStatus: 'cancelled' }));
+    order.updatedAt = new Date().toISOString();
+
+    serverOrders.set(id, order);
+
+    res.json({
+      success: true,
+      order,
+      message: 'Order cancelled successfully',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to cancel order' });
+  }
+});
+
 // System Status Endpoint
 app.get('/api/system/status', (_req: Request, res: Response) => {
   const hasSupabase = Boolean(process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_PUBLISHABLE_KEY);

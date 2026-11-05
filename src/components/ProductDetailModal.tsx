@@ -9,6 +9,10 @@ import {
   ShieldCheck,
   Sparkles,
   ArrowRight,
+  ShoppingCart,
+  Zap,
+  Plus,
+  Minus,
 } from 'lucide-react';
 import { Product } from '../types';
 
@@ -16,14 +20,21 @@ interface ProductDetailModalProps {
   product: Product | null;
   onClose: () => void;
   onOpenEnquiry: (product: Product) => void;
+  onAddToCart?: (product: Product, quantity: number) => void;
+  onBuyNow?: (product: Product, quantity: number) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   product,
   onClose,
   onOpenEnquiry,
+  onAddToCart,
+  onBuyNow,
 }) => {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [quantity, setQuantity] = useState<number>(() =>
+    product?.minOrderQuantity ? Math.max(1, product.minOrderQuantity) : 1
+  );
 
   if (!product) return null;
 
@@ -271,18 +282,96 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
               </div>
 
-              {/* Primary Contact Actions */}
+              {/* Purchase Module: Quantity, Add to Cart & Buy Now */}
+              <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200/80 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    Quantity ({product.unit}s)
+                  </span>
+                  
+                  {/* Quantity Stepper */}
+                  <div className="flex items-center border border-slate-300 rounded-xl bg-white overflow-hidden shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => Math.max(product.minOrderQuantity || 1, q - 1))}
+                      disabled={!product.inStock || quantity <= (product.minOrderQuantity || 1)}
+                      className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                      title="Decrease quantity"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="px-4 py-1 text-sm font-extrabold text-slate-900 min-w-[36px] text-center font-mono">
+                      {quantity}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => Math.min(product.stockCount || 999, q + 1))}
+                      disabled={!product.inStock || quantity >= (product.stockCount || 999)}
+                      className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                      title="Increase quantity"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Subtotal calculation for selected quantity */}
+                <div className="flex items-center justify-between text-xs text-slate-600 pt-1 border-t border-amber-200/50">
+                  <span>Subtotal for {quantity} {product.unit}{quantity > 1 ? 's' : ''}:</span>
+                  <span className="text-base font-extrabold text-slate-900">
+                    ₹{new Intl.NumberFormat('en-IN').format((product.price || 0) * quantity)}
+                  </span>
+                </div>
+
+                {/* Primary Amazon-Style Action Buttons */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onAddToCart) onAddToCart(product, quantity);
+                      onClose();
+                    }}
+                    disabled={!product.inStock}
+                    className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm bg-amber-400 hover:bg-amber-500 active:scale-[0.98] text-slate-950 transition-all shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <ShoppingCart className="w-4 h-4" />
+                    <span>Add to Cart</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onBuyNow) {
+                        onBuyNow(product, quantity);
+                      } else if (onAddToCart) {
+                        onAddToCart(product, quantity);
+                      }
+                      onClose();
+                    }}
+                    disabled={!product.inStock}
+                    className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm bg-orange-600 hover:bg-orange-700 active:scale-[0.98] text-white transition-all shadow-md shadow-orange-600/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <Zap className="w-4 h-4 fill-white" />
+                    <span>Buy Now</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Direct Shop Contact & Enquiry Options */}
               <div className="pt-2 space-y-2.5">
+                <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider text-center">
+                  Direct Dukaan Enquiry & Bulk Pricing
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* WhatsApp Click to Chat */}
                   <a
                     href={whatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-sm bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-md shadow-emerald-600/20"
+                    className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-semibold text-xs bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-sm"
                   >
-                    <MessageCircle className="w-4 h-4" />
-                    <span>Chat on WhatsApp</span>
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>WhatsApp Seller</span>
                   </a>
 
                   {/* Direct Enquiry Modal Trigger */}
@@ -291,10 +380,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                       onOpenEnquiry(product);
                       onClose();
                     }}
-                    className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-sm bg-orange-600 hover:bg-orange-700 text-white transition-all shadow-md shadow-orange-600/20 cursor-pointer"
+                    className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-semibold text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-all cursor-pointer"
                   >
-                    <span>Send Direct Enquiry</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <span>Send Custom Quote Enquiry</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
@@ -304,7 +393,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 hover:border-slate-300 rounded-xl transition-colors"
                 >
                   <Phone className="w-3.5 h-3.5 text-orange-600" />
-                  <span>Call Seller Directly: {product.sellerPhone}</span>
+                  <span>Call Shopkeeper: {product.sellerPhone}</span>
                 </a>
               </div>
             </div>

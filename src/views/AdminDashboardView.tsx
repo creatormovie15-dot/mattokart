@@ -24,8 +24,12 @@ import {
   Building,
   MapPin,
   ClipboardList,
+  ShoppingBag,
+  Truck,
+  TrendingUp,
+  Search,
 } from 'lucide-react';
-import { Seller, Product, Category, BuyerEnquiry, CategoryId, VerificationAuditLog } from '../types';
+import { Seller, Product, Category, BuyerEnquiry, CategoryId, VerificationAuditLog, Order, OrderStatus } from '../types';
 import {
   adminApproveSeller,
   adminRejectSeller,
@@ -48,6 +52,7 @@ interface AdminDashboardViewProps {
   products: Product[];
   categories: Category[];
   enquiries: BuyerEnquiry[];
+  orders?: Order[];
   onApproveSeller: (sellerId: string) => void;
   onRejectSeller: (sellerId: string) => void;
   onToggleSuspendSeller: (sellerId: string) => void;
@@ -55,6 +60,7 @@ interface AdminDashboardViewProps {
   onRejectProduct: (productId: string, reason: string) => void;
   onAddCategory: (category: Category) => void;
   onUpdateSellerFeeStatus: (sellerId: string, status: Seller['registrationFeeStatus']) => void;
+  onAdminUpdateOrderStatus?: (orderId: string, status: OrderStatus, notes?: string) => Promise<boolean>;
 }
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
@@ -62,6 +68,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   products,
   categories,
   enquiries,
+  orders = [],
   onApproveSeller,
   onRejectSeller,
   onToggleSuspendSeller,
@@ -69,6 +76,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onRejectProduct,
   onAddCategory,
   onUpdateSellerFeeStatus,
+  onAdminUpdateOrderStatus,
 }) => {
   // Gate admin access via passcode
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -76,8 +84,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [authError, setAuthError] = useState('');
 
   const [activeTab, setActiveTab] = useState<
-    'applications' | 'products' | 'sellers' | 'categories' | 'fees' | 'enquiries' | 'database' | 'audit'
-  >('applications');
+    'orders' | 'applications' | 'products' | 'sellers' | 'categories' | 'fees' | 'enquiries' | 'database' | 'audit'
+  >('orders');
+
+  const [adminOrderSearch, setAdminOrderSearch] = useState('');
+  const [adminOrderStatusFilter, setAdminOrderStatusFilter] = useState<'all' | OrderStatus>('all');
+  const [adminUpdatingOrderId, setAdminUpdatingOrderId] = useState<string | null>(null);
+
+  // Sales Analytics Metrics
+  const totalGmv = orders.reduce((sum, o) => (o.orderStatus !== 'cancelled' ? sum + o.totalAmount : sum), 0);
+  const activeOrdersCount = orders.filter((o) => o.orderStatus !== 'delivered' && o.orderStatus !== 'cancelled').length;
+  const deliveredOrdersCount = orders.filter((o) => o.orderStatus === 'delivered').length;
+  const cancelledOrdersCount = orders.filter((o) => o.orderStatus === 'cancelled').length;
 
   // Audit Log State
   const [auditLogs, setAuditLogs] = useState<VerificationAuditLog[]>([
@@ -383,40 +401,65 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       </div>
 
       {/* Top Admin Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="text-[11px] text-slate-500 font-medium">Platform Sales (GMV)</div>
+          <div className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">
+            ₹{new Intl.NumberFormat('en-IN').format(totalGmv)}
+          </div>
+          <div className="text-[10px] text-emerald-800 font-semibold">{deliveredOrdersCount} completed</div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+          <div className="text-[11px] text-slate-500 font-medium">Total Orders</div>
+          <div className="text-xl sm:text-2xl font-black text-orange-600 mt-0.5">{orders.length}</div>
+          <div className="text-[10px] text-slate-400">{activeOrdersCount} in fulfillment</div>
+        </div>
+
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="text-[11px] text-slate-500 font-medium">Pending Sellers</div>
-          <div className="text-2xl font-black text-amber-600 mt-0.5">{pendingSellers.length}</div>
+          <div className="text-xl sm:text-2xl font-black text-amber-600 mt-0.5">{pendingSellers.length}</div>
           <div className="text-[10px] text-slate-400">Awaiting approval</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="text-[11px] text-slate-500 font-medium">Active Sellers</div>
-          <div className="text-2xl font-black text-slate-900 mt-0.5">{activeSellers.length}</div>
+          <div className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{activeSellers.length}</div>
           <div className="text-[10px] text-emerald-800 font-semibold">Verified in Saharanpur</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
           <div className="text-[11px] text-slate-500 font-medium">Approved Products</div>
-          <div className="text-2xl font-black text-slate-900 mt-0.5">{products.filter((p) => p.status === 'approved').length}</div>
+          <div className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">{products.filter((p) => p.status === 'approved').length}</div>
           <div className="text-[10px] text-slate-400">Live in catalog</div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-          <div className="text-[11px] text-slate-500 font-medium">Customer Enquiries</div>
-          <div className="text-2xl font-black text-blue-600 mt-0.5">{enquiries.length}</div>
-          <div className="text-[10px] text-slate-400">Buyer leads generated</div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs col-span-2 lg:col-span-1">
-          <div className="text-[11px] text-slate-500 font-medium">Seller Fee Policy</div>
-          <div className="text-2xl font-black text-emerald-600 mt-0.5">₹0 / Free</div>
-          <div className="text-[10px] text-emerald-800 font-semibold">FREE First Year</div>
+          <div className="text-[11px] text-slate-500 font-medium">Customer Inquiries</div>
+          <div className="text-xl sm:text-2xl font-black text-blue-600 mt-0.5">{enquiries.length}</div>
+          <div className="text-[10px] text-slate-400">Direct buyer leads</div>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 gap-2 sm:gap-6 text-xs font-semibold overflow-x-auto no-scrollbar">
+        <button
+          onClick={() => setActiveTab('orders')}
+          className={`pb-3 border-b-2 transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 ${
+            activeTab === 'orders'
+              ? 'border-orange-600 text-orange-600 font-bold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ShoppingBag className="w-4 h-4" />
+          <span>Marketplace Orders ({orders.length})</span>
+          {activeOrdersCount > 0 && (
+            <span className="w-4 h-4 rounded-full bg-orange-600 text-white text-[10px] font-bold flex items-center justify-center">
+              {activeOrdersCount}
+            </span>
+          )}
+        </button>
+
         <button
           onClick={() => setActiveTab('applications')}
           className={`pb-3 border-b-2 transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 ${
@@ -513,6 +556,279 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <span>Audit Trail ({auditLogs.length})</span>
         </button>
       </div>
+
+      {/* Tab 0: Marketplace Orders & Sales Management */}
+      {activeTab === 'orders' && (
+        <div className="space-y-6">
+          {/* Sales Performance & Order Breakdown Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                Gross Merchandise Value
+              </span>
+              <div className="text-2xl font-black text-slate-900 font-mono">
+                ₹{new Intl.NumberFormat('en-IN').format(totalGmv)}
+              </div>
+              <p className="text-[10px] text-slate-400">Total volume processed across Saharanpur</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                Active Fulfilments
+              </span>
+              <div className="text-2xl font-black text-orange-600 font-mono">
+                {activeOrdersCount}
+              </div>
+              <p className="text-[10px] text-slate-400">Orders placed, confirmed, or on delivery</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                Delivered & Settled
+              </span>
+              <div className="text-2xl font-black text-emerald-700 font-mono">
+                {deliveredOrdersCount}
+              </div>
+              <p className="text-[10px] text-emerald-800 font-medium">Cash on Delivery collected</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                Cancelled / Disputed
+              </span>
+              <div className="text-2xl font-black text-slate-400 font-mono">
+                {cancelledOrdersCount}
+              </div>
+              <p className="text-[10px] text-slate-400">Zero penalty on COD cancellations</p>
+            </div>
+          </div>
+
+          {/* Search & Status Filters */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+            {/* Search Input */}
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={adminOrderSearch}
+                onChange={(e) => setAdminOrderSearch(e.target.value)}
+                placeholder="Search Order #, customer name, or phone..."
+                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+              />
+            </div>
+
+            {/* Filter buttons */}
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-semibold w-full sm:w-auto overflow-x-auto">
+              {(['all', 'placed', 'confirmed', 'processing', 'out_for_delivery', 'delivered', 'cancelled'] as const).map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setAdminOrderStatusFilter(st)}
+                  className={`px-2.5 py-1 rounded-lg transition-all capitalize cursor-pointer shrink-0 ${
+                    adminOrderStatusFilter === st
+                      ? 'bg-white text-slate-900 shadow-xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {st === 'all' ? `All (${orders.length})` : st.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Orders List Table */}
+          {(() => {
+            const filteredOrders = orders.filter((order) => {
+              const matchesStatus = adminOrderStatusFilter === 'all' || order.orderStatus === adminOrderStatusFilter;
+              const q = adminOrderSearch.trim().toLowerCase();
+              const matchesSearch =
+                !q ||
+                order.orderNumber.toLowerCase().includes(q) ||
+                order.customerName.toLowerCase().includes(q) ||
+                order.customerPhone.includes(q) ||
+                order.deliveryAddress.toLowerCase().includes(q);
+              return matchesStatus && matchesSearch;
+            });
+
+            if (filteredOrders.length === 0) {
+              return (
+                <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-2">
+                  <ShoppingBag className="w-10 h-10 text-slate-300 mx-auto" />
+                  <h4 className="font-bold text-slate-900 text-sm">No marketplace orders found</h4>
+                  <p className="text-xs text-slate-400">
+                    Try adjusting your search criteria or status filter.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-4">
+                {filteredOrders.map((order) => {
+                  const formattedTotal = new Intl.NumberFormat('en-IN').format(order.totalAmount);
+                  const isUpdating = adminUpdatingOrderId === order.id;
+
+                  const handleStatusChange = async (newStatus: OrderStatus) => {
+                    setAdminUpdatingOrderId(order.id);
+                    try {
+                      if (onAdminUpdateOrderStatus) {
+                        await onAdminUpdateOrderStatus(order.id, newStatus, 'Admin status override from MattoKart control center');
+                      }
+                    } finally {
+                      setAdminUpdatingOrderId(null);
+                    }
+                  };
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs p-5 space-y-4"
+                    >
+                      {/* Top Header */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 text-xs">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-bold text-slate-900 text-sm">
+                            #{order.orderNumber}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${
+                              order.orderStatus === 'placed'
+                                ? 'bg-amber-100 text-amber-900'
+                                : order.orderStatus === 'confirmed'
+                                ? 'bg-blue-100 text-blue-900'
+                                : order.orderStatus === 'processing'
+                                ? 'bg-purple-100 text-purple-900'
+                                : order.orderStatus === 'out_for_delivery'
+                                ? 'bg-orange-100 text-orange-900'
+                                : order.orderStatus === 'delivered'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}
+                          >
+                            {order.orderStatus.replace('_', ' ')}
+                          </span>
+                          <span className="text-slate-400">
+                            {new Date(order.createdAt).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <span className="text-slate-500">
+                            Grand Total: <strong className="text-slate-900 font-mono text-sm">₹{formattedTotal}</strong>
+                          </span>
+                          <span className="text-[10px] uppercase font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                            {order.paymentMethod}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Customer & Address Details */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs bg-slate-50 p-3.5 rounded-xl border border-slate-200/80">
+                        <div>
+                          <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px] block">
+                            Customer Details
+                          </span>
+                          <div className="font-bold text-slate-900 text-sm mt-0.5">{order.customerName}</div>
+                          <div className="font-mono text-slate-600">{order.customerPhone}</div>
+                          {order.customerEmail && <div className="text-slate-500">{order.customerEmail}</div>}
+                        </div>
+
+                        <div>
+                          <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px] block">
+                            Delivery Address
+                          </span>
+                          <div className="text-slate-800 font-medium mt-0.5">{order.deliveryAddress}</div>
+                          <div className="text-slate-500">
+                            {order.locality}, Saharanpur, UP — PIN {order.pinCode}
+                          </div>
+                        </div>
+
+                        <div>
+                          <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px] block">
+                            Payment & Status Notes
+                          </span>
+                          <div className="text-slate-800 capitalize mt-0.5">Payment: {order.paymentStatus}</div>
+                          {order.notes ? (
+                            <div className="text-amber-800 italic mt-0.5">&quot;{order.notes}&quot;</div>
+                          ) : (
+                            <div className="text-slate-400 mt-0.5">No customer notes</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Items Ordered & Multi-Seller Details */}
+                      <div className="space-y-2">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                          Ordered Items ({order.items.length})
+                        </span>
+                        <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden text-xs">
+                          {order.items.map((item) => (
+                            <div key={item.id} className="p-3 bg-white flex items-center justify-between gap-4">
+                              <div className="flex items-center gap-3">
+                                <img
+                                  src={item.productImage || ''}
+                                  alt=""
+                                  className="w-10 h-10 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
+                                />
+                                <div>
+                                  <div className="font-semibold text-slate-900">{item.productName}</div>
+                                  <div className="text-slate-500 text-[11px]">
+                                    Sold by: <span className="text-orange-700 font-medium">{item.sellerShopName || 'Local Dukaan'}</span> • Qty: {item.quantity} {item.unit}
+                                  </div>
+                                </div>
+                              </div>
+                              <span className="font-bold text-slate-900 font-mono">
+                                ₹{new Intl.NumberFormat('en-IN').format(item.totalPrice)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Admin Moderation Actions */}
+                      <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-500 font-medium">Update Status:</span>
+                          <select
+                            disabled={isUpdating}
+                            value={order.orderStatus}
+                            onChange={(e) => handleStatusChange(e.target.value as OrderStatus)}
+                            className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 font-semibold text-slate-800 text-xs cursor-pointer"
+                          >
+                            <option value="placed">Placed (New)</option>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="processing">Processing in Shop</option>
+                            <option value="out_for_delivery">Out for Delivery</option>
+                            <option value="delivered">Delivered (Completed)</option>
+                            <option value="cancelled">Cancelled</option>
+                          </select>
+                        </div>
+
+                        {order.orderStatus !== 'cancelled' && (
+                          <button
+                            type="button"
+                            disabled={isUpdating}
+                            onClick={() => handleStatusChange('cancelled')}
+                            className="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg font-semibold text-xs transition-colors cursor-pointer"
+                          >
+                            Cancel & Refund / Void
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Tab 1: Seller Applications Review */}
       {activeTab === 'applications' && (

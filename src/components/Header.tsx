@@ -19,6 +19,8 @@ import {
   User,
   LogOut,
   ShieldCheck,
+  ShoppingCart,
+  Package,
 } from 'lucide-react';
 import { ActiveTab, SaharanpurLocality, AuthUser, UserRole } from '../types';
 
@@ -31,6 +33,7 @@ interface HeaderProps {
   setSearchQuery: (query: string) => void;
   onPerformSearch: (query: string) => void;
   enquiriesCount: number;
+  cartCount?: number;
   currentUser?: AuthUser | null;
   onOpenAuthModal?: (role?: UserRole) => void;
   onLogout?: () => void;
@@ -45,6 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
   setSearchQuery,
   onPerformSearch,
   enquiriesCount,
+  cartCount = 0,
   currentUser,
   onOpenAuthModal,
   onLogout,
@@ -61,6 +65,8 @@ export const Header: React.FC<HeaderProps> = ({
   const isSeller = currentPath.startsWith('/seller');
   const isAdmin = currentPath.startsWith('/admin');
   const isEnquiries = currentPath === '/enquiries';
+  const isOrders = currentPath === '/orders';
+  const isCart = currentPath === '/cart' || currentPath === '/checkout';
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -237,7 +243,42 @@ export const Header: React.FC<HeaderProps> = ({
           </form>
 
           {/* Action CTAs Desktop */}
-          <div className="hidden md:flex items-center gap-3 shrink-0">
+          <div className="hidden md:flex items-center gap-2.5 shrink-0">
+            {/* My Orders Button */}
+            <button
+              onClick={() => handleNav('/orders', 'orders')}
+              className={`relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                isOrders
+                  ? 'bg-orange-50 text-orange-600 border border-orange-200'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+              title="My Orders & Delivery Tracking"
+            >
+              <Package className="w-4 h-4 text-orange-600" />
+              <span>My Orders</span>
+            </button>
+
+            {/* Shopping Cart Button */}
+            <button
+              onClick={() => handleNav('/cart', 'cart')}
+              className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                isCart
+                  ? 'bg-orange-600 text-white shadow-xs'
+                  : 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200'
+              }`}
+              title="Shopping Cart (शॉपिंग कार्ट)"
+            >
+              <div className="relative">
+                <ShoppingCart className="w-4 h-4" />
+                {cartCount > 0 && (
+                  <span className="absolute -top-2 -right-2.5 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black flex items-center justify-center shadow-xs">
+                    {cartCount}
+                  </span>
+                )}
+              </div>
+              <span>Cart {cartCount > 0 ? `(${cartCount})` : ''}</span>
+            </button>
+
             {/* My Enquiries */}
             <button
               onClick={() => handleNav('/enquiries', 'enquiries')}
@@ -290,17 +331,17 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Become a Seller Button */}
             <button
               onClick={() => handleNav('/seller/register', 'seller-register')}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition-all shadow-xs cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition-all shadow-xs cursor-pointer"
             >
               <Store className="w-4 h-4 text-slate-950" />
-              <span>Sell on MattoKart</span>
-              <span className="bg-slate-900 text-amber-300 text-[10px] px-1.5 py-0.5 rounded-sm font-semibold">
-                FREE 1st Yr
+              <span>Sell</span>
+              <span className="bg-slate-900 text-amber-300 text-[10px] px-1 py-0.5 rounded-sm font-semibold">
+                FREE
               </span>
             </button>
           </div>
 
-          {/* Mobile Menu Button */}
+          {/* Mobile Header Buttons (Location + Cart + Menu) */}
           <div className="flex md:hidden items-center gap-1">
             <button
               onClick={onOpenLocationModal}
@@ -308,6 +349,18 @@ export const Header: React.FC<HeaderProps> = ({
               title="Select Location"
             >
               <MapPin className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleNav('/cart', 'cart')}
+              className="relative p-2 text-slate-700 hover:text-orange-600 cursor-pointer"
+              title="Shopping Cart"
+            >
+              <ShoppingCart className="w-5 h-5 text-orange-600" />
+              {cartCount > 0 && (
+                <span className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black flex items-center justify-center">
+                  {cartCount}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -484,13 +537,43 @@ export const Header: React.FC<HeaderProps> = ({
               <ArrowRight className="w-4 h-4 text-slate-400" />
             </button>
             <button
+              onClick={() => handleNav('/cart', 'cart')}
+              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between cursor-pointer ${
+                isCart ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4 text-orange-600" />
+                <span>Shopping Cart (कार्ट)</span>
+                {cartCount > 0 && (
+                  <span className="bg-amber-500 text-slate-950 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                    {cartCount}
+                  </span>
+                )}
+              </div>
+              <ArrowRight className="w-4 h-4 text-slate-400" />
+            </button>
+            <button
+              onClick={() => handleNav('/orders', 'orders')}
+              className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between cursor-pointer ${
+                isOrders ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Package className="w-4 h-4 text-orange-600" />
+                <span>My Orders & Tracking (मेरे ऑर्डर)</span>
+              </div>
+              <ArrowRight className="w-4 h-4 text-slate-400" />
+            </button>
+            <button
               onClick={() => handleNav('/enquiries', 'enquiries')}
               className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between cursor-pointer ${
                 isEnquiries ? 'bg-orange-50 text-orange-600 font-bold' : 'text-slate-700'
               }`}
             >
               <div className="flex items-center gap-2">
-                <span>My Enquiries</span>
+                <MessageSquare className="w-4 h-4 text-slate-500" />
+                <span>My Direct Enquiries</span>
                 {enquiriesCount > 0 && (
                   <span className="bg-orange-600 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
                     {enquiriesCount}

@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import { Product, Seller, Category, BuyerEnquiry } from '../types';
+import { Product, Seller, Category, BuyerEnquiry, Order, OrderItem, OrderStatus } from '../types';
 
 /**
  * Supabase Data Service
@@ -347,3 +347,173 @@ export async function updateSellerStatusInSupabase(
     return { success: false, error: err.message };
   }
 }
+
+// 11. Create Order in Supabase
+export async function createOrderInSupabase(
+  order: Order
+): Promise<{ success: boolean; id?: string; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) {
+    return { success: false, error: 'Supabase is not configured' };
+  }
+  try {
+    const orderPayload: any = {
+      order_number: order.orderNumber,
+      customer_name: order.customerName,
+      customer_phone: order.customerPhone,
+      customer_email: order.customerEmail || null,
+      delivery_address: order.deliveryAddress,
+      locality: order.locality,
+      pin_code: order.pinCode,
+      total_amount: order.totalAmount,
+      payment_method: order.paymentMethod || 'cod',
+      payment_status: order.paymentStatus || 'pending',
+      order_status: order.orderStatus || 'placed',
+      notes: order.notes || null,
+    };
+
+    if (order.id && isValidUuid(order.id)) {
+      orderPayload.id = order.id;
+    }
+    if (order.customerId && isValidUuid(order.customerId)) {
+      orderPayload.customer_id = order.customerId;
+    }
+
+    const { data: orderRow, error: orderError } = await supabase
+      .from('orders')
+      .insert(orderPayload)
+      .select()
+      .single();
+
+    if (orderError || !orderRow) {
+      console.warn('[Supabase] Failed to create order:', orderError?.message);
+      return { success: false, error: orderError?.message };
+    }
+
+    // Insert order items
+    if (order.items && order.items.length > 0) {
+      const itemsPayload = order.items.map((item) => ({
+        order_id: orderRow.id,
+        product_id: isValidUuid(item.productId) ? item.productId : null,
+        seller_id: isValidUuid(item.sellerId) ? item.sellerId : '00000000-0000-0000-0000-000000000000',
+        product_name: item.productName,
+        product_image: item.productImage || null,
+        unit_price: item.unitPrice,
+        quantity: item.quantity,
+        unit: item.unit || 'piece',
+        total_price: item.totalPrice,
+        item_status: item.itemStatus || 'pending',
+      }));
+
+      const { error: itemsError } = await supabase.from('order_items').insert(itemsPayload);
+      if (itemsError) {
+        console.warn('[Supabase] Failed to insert order items:', itemsError.message);
+      }
+    }
+
+    return { success: true, id: orderRow.id };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 12. Get Orders from Supabase (Supports filtering by customer or seller)
+export async function getOrdersFromSupabase(
+  customerId?: string,
+  sellerId?: string
+): Promise<Order[] | null> {
+  if (!supabase || !isSupabaseConfigured) return null;
+  try {
+    let query = supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false });
+
+    if (customerId && isValidUuid(customerId)) {
+      query = query.eq('customer_id', customerId);
+    }
+
+    const { data, error } = await query;
+    if (error || !data) return null;
+
+    let orders: Order[] = data.map((o: any) => ({
+      id: o.id,
+      orderNumber: o.order_number,
+      customerId: o.customer_id || undefined,
+      customerName: o.customer_name,
+      customerPhone: o.customer_phone,
+      customerEmail: o.customer_email || undefined,
+      deliveryAddress: o.delivery_address,
+      locality: o.locality,
+      city: 'Saharanpur',
+      state: 'Uttar Pradesh',
+      pinCode: o.pin_code,
+      totalAmount: Number(o.total_amount),
+      paymentMethod: o.payment_method as any,
+      paymentStatus: o.payment_status as any,
+      orderStatus: o.order_status as any,
+      notes: o.notes || undefined,
+      items: Array.isArray(o.order_items)
+        ? o.order_items.map((oi: any) => ({
+            id: oi.id,
+            orderId: oi.order_id,
+            productId: oi.product_id || '',
+            sellerId: oi.seller_id,
+            productName: oi.product_name,
+            productImage: oi.product_image || '',
+            unitPrice: Number(oi.unit_price),
+            quantity: oi.quantity,
+            unit: oi.unit as any,
+            totalPrice: Number(oi.total_price),
+            itemStatus: oi.item_status as any,
+            createdAt: oi.created_at,
+          }))
+        : [],
+      createdAt: o.created_at,
+      updatedAt: o.updated_at,
+    }));
+
+    // If sellerId filter is provided, filter orders to only those with items from this seller
+    if (sellerId) {
+      orders = orders
+        .map((order) => ({
+          ...order,
+          items: order.items.filter((item) => item.sellerId === sellerId),
+        }))
+        .filter((order) => order.items.length > 0);
+    }
+
+    return orders;
+  } catch {
+    return null;
+  }
+}
+
+// 13. Update Order Status in Supabase
+export async function updateOrderStatusInSupabase(
+  orderId: string,
+  status: OrderStatus,
+  notes?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) return { success: false };
+  if (!isValidUuid(orderId)) return { success: false };
+  try {
+    const payload: any = {
+      order_status: status,
+      updated_at: new Date().toISOString(),
+    };
+    if (notes) payload.notes = notes;
+
+    const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
+    if (error) return { success: false, error: error.message };
+
+    // Also update order items status if order is cancelled
+    if (status === 'cancelled') {
+      await supabase
+        .from('order_items')
+        .update({ item_status: 'cancelled' })
+        .eq('order_id', orderId);
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+

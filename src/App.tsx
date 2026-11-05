@@ -11,12 +11,17 @@ import {
   LegalDocType,
   AuthUser,
   UserRole,
+  CartItem,
+  Order,
+  OrderStatus,
+  OrderItem,
 } from './types';
 import {
   INITIAL_CATEGORIES,
   INITIAL_PRODUCTS,
   INITIAL_SELLERS,
   INITIAL_ENQUIRIES,
+  INITIAL_ORDERS,
   SAHARANPUR_LOCALITIES,
 } from './data/mockData';
 import { Header } from './components/Header';
@@ -37,6 +42,9 @@ import { SellerDashboardView } from './views/SellerDashboardView';
 import { AdminDashboardView } from './views/AdminDashboardView';
 import { EnquiriesView } from './views/EnquiriesView';
 import { LegalView } from './views/LegalView';
+import { CartView } from './views/CartView';
+import { CheckoutView } from './views/CheckoutView';
+import { OrdersView } from './views/OrdersView';
 import { isSupabaseConfigured } from './lib/supabaseClient';
 import {
   getCategoriesFromSupabase,
@@ -49,6 +57,9 @@ import {
   deleteProductFromSupabase,
   updateProductStatusInSupabase,
   updateSellerStatusInSupabase,
+  createOrderInSupabase,
+  getOrdersFromSupabase,
+  updateOrderStatusInSupabase,
 } from './lib/supabaseService';
 import { getStoredAuthUser, setStoredAuthUser, logoutUser } from './lib/authClient';
 
@@ -114,6 +125,12 @@ export default function App() {
       if (special === 'woodcraft') {
         setCatalogCategory('furniture');
       }
+    } else if (path === '/cart') {
+      setActiveTab('cart');
+    } else if (path === '/checkout') {
+      setActiveTab('checkout');
+    } else if (path === '/orders') {
+      setActiveTab('orders');
     } else if (path === '/shops') {
       setActiveTab('shops');
     } else if (path === '/seller/register') {
@@ -159,6 +176,11 @@ export default function App() {
     safeLoad('enquiries', INITIAL_ENQUIRIES)
   );
 
+  // Shopping Cart & Multi-vendor Orders State
+  const [cart, setCart] = useState<CartItem[]>(() => safeLoad('cart', []));
+  const [orders, setOrders] = useState<Order[]>(() => safeLoad('orders', INITIAL_ORDERS));
+  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
   // Active seller profile for Seller Dashboard testing
   const [currentSellerId, setCurrentSellerId] = useState<string>('seller-1');
 
@@ -202,10 +224,11 @@ export default function App() {
     let isMounted = true;
     const loadSupabaseData = async () => {
       try {
-        const [cloudCats, cloudProds, cloudSellers] = await Promise.all([
+        const [cloudCats, cloudProds, cloudSellers, cloudOrders] = await Promise.all([
           getCategoriesFromSupabase(),
           getProductsFromSupabase(),
           getSellersFromSupabase(),
+          getOrdersFromSupabase(),
         ]);
         if (!isMounted) return;
         if (cloudCats && cloudCats.length > 0) setCategories(cloudCats);
@@ -224,6 +247,13 @@ export default function App() {
             const cloudIds = new Set(cloudSellers.map((s) => s.id));
             const localOnly = currentSellers.filter((s) => !cloudIds.has(s.id));
             return [...localOnly, ...cloudSellers];
+          });
+        }
+        if (cloudOrders && cloudOrders.length > 0) {
+          setOrders((currentOrders) => {
+            const cloudIds = new Set(cloudOrders.map((o) => o.id));
+            const localOnly = currentOrders.filter((o) => !cloudIds.has(o.id));
+            return [...localOnly, ...cloudOrders];
           });
         }
       } catch {
@@ -264,6 +294,15 @@ export default function App() {
         break;
       case 'shops':
         navigate('/shops');
+        break;
+      case 'cart':
+        navigate('/cart');
+        break;
+      case 'checkout':
+        navigate('/checkout');
+        break;
+      case 'orders':
+        navigate('/orders');
         break;
       case 'seller-register':
         navigate('/seller/register');
@@ -314,6 +353,265 @@ export default function App() {
     setActiveTab('legal');
     navigate(`/legal/${doc}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Shopping Cart Handlers
+  const handleAddToCart = (product: Product, quantity = 1) => {
+    setCart((prev) => {
+      const existingIndex = prev.findIndex((item) => item.product.id === product.id);
+      let updated: CartItem[];
+      if (existingIndex >= 0) {
+        updated = [...prev];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          quantity: updated[existingIndex].quantity + quantity,
+        };
+      } else {
+        updated = [
+          ...prev,
+          {
+            productId: product.id,
+            product,
+            quantity,
+            selectedUnit: product.unit,
+          },
+        ];
+      }
+      safeSave('cart', updated);
+      return updated;
+    });
+    addToast('success', 'Added to Cart (कार्ट में जोड़ा गया)', `${product.name} (x${quantity}) added to cart.`);
+  };
+
+  const handleBuyNow = (product: Product, quantity = 1) => {
+    handleAddToCart(product, quantity);
+    handleSetActiveTab('checkout');
+  };
+
+  const handleUpdateCartQuantity = (productId: string, quantity: number) => {
+    setCart((prev) => {
+      let updated: CartItem[];
+      if (quantity <= 0) {
+        updated = prev.filter((item) => item.product.id !== productId);
+      } else {
+        updated = prev.map((item) =>
+          item.product.id === productId ? { ...item, quantity } : item
+        );
+      }
+      safeSave('cart', updated);
+      return updated;
+    });
+  };
+
+  const handleRemoveCartItem = (productId: string) => {
+    setCart((prev) => {
+      const updated = prev.filter((item) => item.product.id !== productId);
+      safeSave('cart', updated);
+      return updated;
+    });
+    addToast('info', 'Item Removed', 'Product removed from your cart.');
+  };
+
+  const handleClearCart = () => {
+    setCart([]);
+    safeSave('cart', []);
+    addToast('info', 'Cart Cleared', 'Your shopping cart is now empty.');
+  };
+
+  // Checkout & Order Placement
+  const handlePlaceOrder = async (orderData: {
+    customerName: string;
+    customerPhone: string;
+    customerEmail?: string;
+    deliveryAddress: string;
+    locality: string;
+    city: string;
+    state: string;
+    pinCode: string;
+    paymentMethod: 'cod' | 'pay_on_delivery';
+    notes?: string;
+  }): Promise<Order | null> => {
+    if (cart.length === 0) return null;
+
+    const totalAmount = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const orderId = `ord-${Date.now()}`;
+    const orderNum = `MKT-${orderData.pinCode || '247001'}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const orderItems: OrderItem[] = cart.map((item, idx) => ({
+      id: `item-${Date.now()}-${idx}`,
+      orderId,
+      productId: item.product.id,
+      sellerId: item.product.sellerId,
+      sellerShopName: item.product.sellerShopName,
+      productName: item.product.name,
+      productImage: (item.product.images && item.product.images[0]) || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
+      unitPrice: item.product.price,
+      quantity: item.quantity,
+      unit: item.product.unit,
+      totalPrice: item.product.price * item.quantity,
+      itemStatus: 'pending',
+      createdAt: new Date().toISOString(),
+    }));
+
+    const newOrder: Order = {
+      id: orderId,
+      orderNumber: orderNum,
+      customerId: currentUser?.id || `cust-${orderData.customerPhone}`,
+      customerName: orderData.customerName,
+      customerPhone: orderData.customerPhone,
+      customerEmail: orderData.customerEmail,
+      deliveryAddress: orderData.deliveryAddress,
+      locality: orderData.locality,
+      city: orderData.city || 'Saharanpur',
+      state: orderData.state || 'Uttar Pradesh',
+      pinCode: orderData.pinCode,
+      totalAmount,
+      paymentMethod: orderData.paymentMethod,
+      paymentStatus: 'pending',
+      orderStatus: 'placed',
+      notes: orderData.notes,
+      items: orderItems,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Sync to Express Backend
+    try {
+      await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newOrder),
+      });
+    } catch (err) {
+      console.warn('[Server] Order sync warning:', err);
+    }
+
+    // Sync to Supabase
+    if (isSupabaseConfigured) {
+      createOrderInSupabase(newOrder).catch((err) => {
+        console.warn('[Supabase] Order creation warning:', err);
+      });
+    }
+
+    // Update local state and clear cart
+    setOrders((prev) => {
+      const updated = [newOrder, ...prev];
+      safeSave('orders', updated);
+      return updated;
+    });
+    setCart([]);
+    safeSave('cart', []);
+
+    addToast(
+      'success',
+      'Order Placed Successfully!',
+      `Order #${newOrder.orderNumber} placed. Delivery in Saharanpur with Cash on Delivery.`
+    );
+
+    return newOrder;
+  };
+
+  // Order Cancellation by Customer
+  const handleCancelOrder = async (orderId: string, reason: string): Promise<boolean> => {
+    const targetOrder = orders.find((o) => o.id === orderId);
+    if (!targetOrder) return false;
+
+    if (targetOrder.orderStatus !== 'placed' && targetOrder.orderStatus !== 'confirmed') {
+      addToast('error', 'Cannot Cancel Order', 'This order is already being processed or is out for delivery. Please contact the seller directly.');
+      return false;
+    }
+
+    try {
+      await fetch(`/api/orders/${orderId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+    } catch (err) {
+      console.warn('[Server] Cancel order warning:', err);
+    }
+
+    if (isSupabaseConfigured) {
+      updateOrderStatusInSupabase(orderId, 'cancelled', reason).catch(() => {});
+    }
+
+    setOrders((prev) => {
+      const updated = prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              orderStatus: 'cancelled' as OrderStatus,
+              updatedAt: new Date().toISOString(),
+              notes: o.notes ? `${o.notes} | Cancelled: ${reason}` : `Cancelled: ${reason}`,
+              items: o.items.map((item) => ({ ...item, itemStatus: 'cancelled' as const })),
+            }
+          : o
+      );
+      safeSave('orders', updated);
+      return updated;
+    });
+
+    addToast('info', 'Order Cancelled', `Order #${targetOrder.orderNumber} has been cancelled.`);
+    return true;
+  };
+
+  // Order Status Update by Seller or Admin
+  const handleUpdateOrderStatus = async (
+    orderId: string,
+    newStatus: OrderStatus,
+    notes?: string
+  ): Promise<boolean> => {
+    try {
+      await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, notes }),
+      });
+    } catch (err) {
+      console.warn('[Server] Update order status warning:', err);
+    }
+
+    if (isSupabaseConfigured) {
+      updateOrderStatusInSupabase(orderId, newStatus, notes).catch(() => {});
+    }
+
+    const titles: Record<OrderStatus, string> = {
+      placed: 'Order Placed (ऑर्डर दर्ज हुआ)',
+      confirmed: 'Order Confirmed by Seller (ऑर्डर स्वीकार हुआ)',
+      processing: 'Processing in Shop (तैयार किया जा रहा है)',
+      out_for_delivery: 'Out for Delivery (डिलीवरी के लिए निकला)',
+      delivered: 'Delivered & COD Collected (डिलीवर हो गया)',
+      cancelled: 'Order Cancelled (ऑर्डर रद्द हुआ)',
+    };
+
+    setOrders((prev) => {
+      const updated = prev.map((o) => {
+        if (o.id !== orderId) return o;
+        return {
+          ...o,
+          orderStatus: newStatus,
+          paymentStatus: newStatus === 'delivered' ? 'completed' : o.paymentStatus,
+          updatedAt: new Date().toISOString(),
+          notes: notes ? `${o.notes || ''} | ${notes}`.trim() : o.notes,
+          items: o.items.map((item) => ({
+            ...item,
+            itemStatus:
+              newStatus === 'cancelled'
+                ? 'cancelled'
+                : newStatus === 'delivered'
+                ? 'delivered'
+                : newStatus === 'out_for_delivery'
+                ? 'shipped'
+                : item.itemStatus,
+          })),
+        };
+      });
+      safeSave('orders', updated);
+      return updated;
+    });
+
+    addToast('success', 'Order Status Updated', `Status changed to ${titles[newStatus] || newStatus}`);
+    return true;
   };
 
   // Enquiry submission
@@ -616,6 +914,10 @@ export default function App() {
         setSearchQuery={setSearchQuery}
         onPerformSearch={handlePerformSearch}
         enquiriesCount={enquiries.length}
+        cartCount={cartCount}
+        currentUser={currentUser}
+        onOpenAuthModal={handleOpenAuthModal}
+        onLogout={handleLogout}
       />
 
       {/* Body Views */}
@@ -630,6 +932,8 @@ export default function App() {
               onSelectCategory={handleSelectCategory}
               onViewProductDetails={(p) => setSelectedProductForDetail(p)}
               onContactSeller={(p) => setSelectedProductForEnquiry(p)}
+              onAddToCart={handleAddToCart}
+              onBuyNow={handleBuyNow}
               onGoToCatalog={() => {
                 setCatalogCategory('all');
                 handleSetActiveTab('catalog');
@@ -650,7 +954,79 @@ export default function App() {
               setSearchQuery={setSearchQuery}
               onViewProductDetails={(p) => setSelectedProductForDetail(p)}
               onContactSeller={(p) => setSelectedProductForEnquiry(p)}
+              onAddToCart={handleAddToCart}
+              onBuyNow={handleBuyNow}
               currentLocality={selectedLocality}
+            />
+          )}
+
+          {activeTab === 'cart' && (
+            <CartView
+              cart={cart}
+              onUpdateQuantity={handleUpdateCartQuantity}
+              onRemoveItem={handleRemoveCartItem}
+              onClearCart={handleClearCart}
+              onProceedToCheckout={() => handleSetActiveTab('checkout')}
+              onGoToCatalog={() => handleSetActiveTab('catalog')}
+              onViewProductDetails={(p) => setSelectedProductForDetail(p)}
+            />
+          )}
+
+          {activeTab === 'checkout' && (
+            <CheckoutView
+              cart={cart}
+              currentUser={currentUser}
+              selectedLocality={selectedLocality}
+              onPlaceOrder={handlePlaceOrder}
+              onGoBackToCart={() => handleSetActiveTab('cart')}
+              onGoToOrders={() => handleSetActiveTab('orders')}
+              onGoToCatalog={() => handleSetActiveTab('catalog')}
+            />
+          )}
+
+          {activeTab === 'orders' && (
+            <OrdersView
+              orders={orders}
+              onCancelOrder={handleCancelOrder}
+              onBuyAgain={(item) => {
+                const matched = products.find((p) => p.id === item.productId);
+                if (matched) {
+                  handleAddToCart(matched, item.quantity || 1);
+                  handleSetActiveTab('cart');
+                } else {
+                  handleAddToCart(
+                    {
+                      id: item.productId,
+                      name: item.productName,
+                      sellerId: item.sellerId,
+                      sellerName: item.sellerShopName || 'Saharanpur Merchant',
+                      sellerShopName: item.sellerShopName || 'Saharanpur Local Shop',
+                      price: item.unitPrice,
+                      images: [item.productImage],
+                      categoryId: 'furniture',
+                      subcategory: 'Artisan Special',
+                      unit: item.unit || 'piece',
+                      minOrderQuantity: 1,
+                      inStock: true,
+                      stockCount: 10,
+                      specifications: {},
+                      sellerLocality: 'Saharanpur',
+                      sellerPhone: '+91 98970 12345',
+                      sellerRating: 4.8,
+                      deliveryAreas: ['Saharanpur Local'],
+                      status: 'approved',
+                      featured: false,
+                      recentlyAdded: false,
+                      isWoodcraftSpecial: false,
+                      description: item.productName,
+                      createdAt: new Date().toISOString(),
+                    },
+                    item.quantity || 1
+                  );
+                  handleSetActiveTab('cart');
+                }
+              }}
+              onGoToCatalog={() => handleSetActiveTab('catalog')}
             />
           )}
 
@@ -677,10 +1053,12 @@ export default function App() {
               products={products}
               enquiries={enquiries}
               categories={categories}
+              orders={orders}
               onAddProduct={handleAddProduct}
               onUpdateProduct={handleUpdateProduct}
               onDeleteProduct={handleDeleteProduct}
               onUpdateSeller={handleUpdateSeller}
+              onUpdateOrderStatus={handleUpdateOrderStatus}
             />
           )}
 
@@ -690,6 +1068,7 @@ export default function App() {
               products={products}
               categories={categories}
               enquiries={enquiries}
+              orders={orders}
               onApproveSeller={handleApproveSeller}
               onRejectSeller={handleRejectSeller}
               onToggleSuspendSeller={handleToggleSuspendSeller}
@@ -697,6 +1076,7 @@ export default function App() {
               onRejectProduct={handleRejectProduct}
               onAddCategory={handleAddCategory}
               onUpdateSellerFeeStatus={handleUpdateSellerFeeStatus}
+              onAdminUpdateOrderStatus={handleUpdateOrderStatus}
             />
           )}
 
@@ -724,6 +1104,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={handleSetActiveTab}
         enquiriesCount={enquiries.length}
+        cartCount={cartCount}
       />
 
       {/* Location Selector Modal */}
@@ -742,6 +1123,8 @@ export default function App() {
         product={selectedProductForDetail}
         onClose={() => setSelectedProductForDetail(null)}
         onOpenEnquiry={(p) => setSelectedProductForEnquiry(p)}
+        onAddToCart={handleAddToCart}
+        onBuyNow={handleBuyNow}
       />
 
       {/* Direct Buyer Enquiry Modal */}

@@ -17,8 +17,12 @@ import {
   Lock,
   AlertCircle,
   ExternalLink,
+  ShoppingBag,
+  Truck,
+  Check,
+  MapPin,
 } from 'lucide-react';
-import { Product, Seller, BuyerEnquiry, Category, UnitType, CategoryId } from '../types';
+import { Product, Seller, BuyerEnquiry, Category, UnitType, CategoryId, Order, OrderStatus } from '../types';
 import { IdentityVerificationCard } from '../components/IdentityVerificationCard';
 
 interface SellerDashboardViewProps {
@@ -28,10 +32,12 @@ interface SellerDashboardViewProps {
   products: Product[];
   enquiries: BuyerEnquiry[];
   categories: Category[];
+  orders?: Order[];
   onAddProduct: (product: Product) => void;
   onUpdateProduct: (product: Product) => void;
   onDeleteProduct: (productId: string) => void;
   onUpdateSeller: (seller: Seller) => void;
+  onUpdateOrderStatus?: (orderId: string, status: OrderStatus, notes?: string) => Promise<boolean>;
 }
 
 export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
@@ -41,18 +47,24 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   products,
   enquiries,
   categories,
+  orders = [],
   onAddProduct,
   onUpdateProduct,
   onDeleteProduct,
   onUpdateSeller,
+  onUpdateOrderStatus,
 }) => {
-  const [activeTab, setActiveTab] = useState<'products' | 'enquiries' | 'profile' | 'kyc'>('products');
+  const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'enquiries' | 'profile' | 'kyc'>('orders');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'active' | 'delivered' | 'cancelled'>('all');
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
 
-  // Filter seller's own data
+  // Filter seller's own data (Strict RLS: seller only accesses orders with their items)
   const sellerProducts = products.filter((p) => p.sellerId === currentSeller.id);
   const sellerEnquiries = enquiries.filter((e) => e.sellerId === currentSeller.id);
+  const sellerOrders = orders.filter((o) => o.items.some((item) => item.sellerId === currentSeller.id));
+  const pendingOrdersCount = sellerOrders.filter((o) => o.orderStatus === 'placed' || o.orderStatus === 'confirmed').length;
 
   // Form states for Add / Edit Product
   const [prodName, setProdName] = useState('');
@@ -270,6 +282,24 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           </div>
         </div>
 
+        {/* Total Customer Orders */}
+        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+            <ShoppingBag className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-[11px] text-slate-500 font-medium">Customer Orders</div>
+            <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <span>{sellerOrders.length} Orders</span>
+              {pendingOrdersCount > 0 && (
+                <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded-full">
+                  {pendingOrdersCount} New
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Free First Year Status */}
         <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
@@ -279,33 +309,34 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
             <div className="text-[11px] text-slate-500 font-medium">Seller Plan & Membership</div>
             <div className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
               <span>FREE First Year (₹0)</span>
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">
-                ₹0 Registration
-              </span>
             </div>
-            <div className="text-[10px] text-slate-500">No listing fee during the first year</div>
-          </div>
-        </div>
-
-        {/* Total Enquiries */}
-        <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-            <MessageSquare className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] text-slate-500 font-medium">Buyer Inquiries Received</div>
-            <div className="text-sm font-bold text-slate-900">
-              {sellerEnquiries.length} Enquiries
-            </div>
+            <div className="text-[10px] text-slate-500">₹0 listing fee during first year</div>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-200 gap-6 text-xs font-semibold">
+      <div className="flex border-b border-slate-200 gap-6 text-xs font-semibold overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('orders')}
+          className={`pb-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'orders'
+              ? 'border-orange-600 text-orange-600 font-bold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ShoppingBag className="w-4 h-4" />
+          <span>Customer Orders ({sellerOrders.length})</span>
+          {pendingOrdersCount > 0 && (
+            <span className="w-4 h-4 rounded-full bg-orange-600 text-white text-[10px] font-bold flex items-center justify-center">
+              {pendingOrdersCount}
+            </span>
+          )}
+        </button>
+
         <button
           onClick={() => setActiveTab('products')}
-          className={`pb-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+          className={`pb-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
             activeTab === 'products'
               ? 'border-orange-600 text-orange-600 font-bold'
               : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -317,7 +348,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
         <button
           onClick={() => setActiveTab('enquiries')}
-          className={`pb-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+          className={`pb-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
             activeTab === 'enquiries'
               ? 'border-orange-600 text-orange-600 font-bold'
               : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -354,6 +385,312 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
           </span>
         </button>
       </div>
+
+      {/* Tab 0: Customer Orders */}
+      {activeTab === 'orders' && (
+        <div className="space-y-5">
+          {/* Status Filter Tabs */}
+          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl max-w-xl text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => setOrderFilter('all')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                orderFilter === 'all'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              All Orders ({sellerOrders.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderFilter('pending')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                orderFilter === 'pending'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Pending Acceptance ({sellerOrders.filter((o) => o.orderStatus === 'placed').length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderFilter('active')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                orderFilter === 'active'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              In Fulfilment ({sellerOrders.filter((o) => o.orderStatus === 'confirmed' || o.orderStatus === 'processing' || o.orderStatus === 'out_for_delivery').length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderFilter('delivered')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                orderFilter === 'delivered'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Delivered ({sellerOrders.filter((o) => o.orderStatus === 'delivered').length})
+            </button>
+          </div>
+
+          {/* Filtered Orders List */}
+          {(() => {
+            const displayOrders = sellerOrders.filter((order) => {
+              if (orderFilter === 'all') return true;
+              if (orderFilter === 'pending') return order.orderStatus === 'placed';
+              if (orderFilter === 'active') {
+                return (
+                  order.orderStatus === 'confirmed' ||
+                  order.orderStatus === 'processing' ||
+                  order.orderStatus === 'out_for_delivery'
+                );
+              }
+              if (orderFilter === 'delivered') return order.orderStatus === 'delivered';
+              if (orderFilter === 'cancelled') return order.orderStatus === 'cancelled';
+              return true;
+            });
+
+            if (displayOrders.length === 0) {
+              return (
+                <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center mx-auto">
+                    <ShoppingBag className="w-6 h-6" />
+                  </div>
+                  <h3 className="font-bold text-slate-900 text-sm">No orders matching this filter</h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    When customers place orders for items from {currentSeller.shopName}, they will appear here in real-time.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-4">
+                {displayOrders.map((order) => {
+                  const relevantItems = order.items.filter((item) => item.sellerId === currentSeller.id);
+                  const sellerItemsTotal = relevantItems.reduce((sum, item) => sum + item.totalPrice, 0);
+                  const formattedTotal = new Intl.NumberFormat('en-IN').format(sellerItemsTotal);
+                  const isUpdating = updatingOrderId === order.id;
+
+                  const handleStatusUpdate = async (newStatus: OrderStatus, reason?: string) => {
+                    setUpdatingOrderId(order.id);
+                    try {
+                      if (onUpdateOrderStatus) {
+                        await onUpdateOrderStatus(order.id, newStatus, reason);
+                      }
+                    } finally {
+                      setUpdatingOrderId(null);
+                    }
+                  };
+
+                  return (
+                    <div
+                      key={order.id}
+                      className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-xs space-y-4 p-5"
+                    >
+                      {/* Top Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-slate-900 text-sm">
+                            #{order.orderNumber}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${
+                              order.orderStatus === 'placed'
+                                ? 'bg-amber-100 text-amber-900'
+                                : order.orderStatus === 'confirmed'
+                                ? 'bg-blue-100 text-blue-900'
+                                : order.orderStatus === 'processing'
+                                ? 'bg-purple-100 text-purple-900'
+                                : order.orderStatus === 'out_for_delivery'
+                                ? 'bg-orange-100 text-orange-900'
+                                : order.orderStatus === 'delivered'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-red-100 text-red-800'
+                            }`}
+                          >
+                            Status: {order.orderStatus.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-4 text-slate-500">
+                          <span>
+                            Placed:{' '}
+                            <strong className="text-slate-800">
+                              {new Date(order.createdAt).toLocaleDateString('en-IN', {
+                                day: 'numeric',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </strong>
+                          </span>
+                          <span>
+                            Your Shop Total:{' '}
+                            <strong className="text-slate-900 text-sm font-mono font-bold">
+                              ₹{formattedTotal}
+                            </strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Customer Delivery Details (Strict RLS: Visible only for orders containing items from this seller) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 text-xs">
+                        <div>
+                          <div className="font-semibold text-slate-700 flex items-center gap-1.5 mb-1">
+                            <UserCheck className="w-3.5 h-3.5 text-orange-600" />
+                            <span>Customer & Delivery Contact:</span>
+                          </div>
+                          <div className="font-bold text-slate-900 text-sm">{order.customerName}</div>
+                          <div className="font-mono text-slate-600 flex items-center gap-1.5 mt-0.5">
+                            <Phone className="w-3 h-3 text-emerald-600" />
+                            <a href={`tel:${order.customerPhone}`} className="hover:underline text-emerald-800 font-semibold">
+                              {order.customerPhone}
+                            </a>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="font-semibold text-slate-700 flex items-center gap-1.5 mb-1">
+                            <MapPin className="w-3.5 h-3.5 text-orange-600" />
+                            <span>Delivery Destination in Saharanpur:</span>
+                          </div>
+                          <p className="text-slate-800 font-medium">
+                            {order.deliveryAddress}
+                          </p>
+                          <p className="text-slate-500">
+                            {order.locality}, PIN {order.pinCode} • <span className="text-emerald-700 font-semibold uppercase">{order.paymentMethod}</span>
+                          </p>
+                          {order.notes && (
+                            <p className="text-[11px] text-amber-800 mt-1 italic">
+                              Customer note: &quot;{order.notes}&quot;
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Items sold by this seller */}
+                      <div className="space-y-2">
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          Items Ordered from Your Dukaan ({relevantItems.length})
+                        </div>
+                        <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+                          {relevantItems.map((item) => (
+                            <div key={item.id} className="p-3 flex items-center justify-between text-xs bg-white">
+                              <div className="flex items-center gap-3">
+                                <img
+                                  src={item.productImage || ''}
+                                  alt=""
+                                  className="w-12 h-12 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
+                                />
+                                <div>
+                                  <div className="font-bold text-slate-900 text-sm">{item.productName}</div>
+                                  <div className="text-slate-500">
+                                    ₹{new Intl.NumberFormat('en-IN').format(item.unitPrice)} × {item.quantity} {item.unit}
+                                  </div>
+                                </div>
+                              </div>
+                              <span className="font-bold text-slate-900 text-sm font-mono">
+                                ₹{new Intl.NumberFormat('en-IN').format(item.totalPrice)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Seller Action Controls */}
+                      <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100">
+                        <div className="text-xs text-slate-500">
+                          Current Stage:{' '}
+                          <span className="font-semibold text-slate-800 capitalize">
+                            {order.orderStatus.replace('_', ' ')}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {order.orderStatus === 'placed' && (
+                            <>
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() => handleStatusUpdate('confirmed')}
+                                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Accept Order</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() => handleStatusUpdate('cancelled', 'Rejected by seller: item out of stock or cannot fulfill')}
+                                className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-xs rounded-xl border border-red-200 transition-colors cursor-pointer"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+
+                          {order.orderStatus === 'confirmed' && (
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={() => handleStatusUpdate('processing')}
+                              className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Package className="w-3.5 h-3.5" />
+                              <span>Mark as Processing in Shop</span>
+                            </button>
+                          )}
+
+                          {order.orderStatus === 'processing' && (
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={() => handleStatusUpdate('out_for_delivery')}
+                              className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Truck className="w-3.5 h-3.5" />
+                              <span>Dispatch (Out for Delivery)</span>
+                            </button>
+                          )}
+
+                          {order.orderStatus === 'out_for_delivery' && (
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={() => handleStatusUpdate('delivered')}
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Mark Delivered & Payment Received (COD)</span>
+                            </button>
+                          )}
+
+                          {order.orderStatus === 'delivered' && (
+                            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">
+                              ✓ Order Fulfilled & Paid
+                            </span>
+                          )}
+
+                          {order.orderStatus === 'cancelled' && (
+                            <span className="text-xs font-semibold text-red-700 bg-red-50 px-3 py-1 rounded-lg border border-red-200">
+                              Cancelled
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Tab 1: Products */}
       {activeTab === 'products' && (
