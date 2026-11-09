@@ -1,4 +1,13 @@
-import { Category, Product, Seller, SaharanpurLocality, BuyerEnquiry, Order } from '../types';
+import {
+  Category,
+  Product,
+  Seller,
+  SaharanpurLocality,
+  BuyerEnquiry,
+  Order,
+  DeliveryPartner,
+  DeliverySettings,
+} from '../types';
 
 export const SAHARANPUR_LOCALITIES: SaharanpurLocality[] = [
   { name: 'Court Road', pinCode: '247001', areaType: 'Commercial Hub' },
@@ -944,6 +953,65 @@ export const INITIAL_ENQUIRIES: BuyerEnquiry[] = [
   },
 ];
 
+export const INITIAL_DELIVERY_PARTNERS: DeliveryPartner[] = [
+  {
+    id: 'dp-1',
+    fullName: 'Rahul Sharma',
+    phone: '+91 98970 88211',
+    vehicleType: 'bike',
+    vehicleNumber: 'UP-11-BC-4589',
+    isActive: true,
+    totalDeliveries: 142,
+    rating: 4.9,
+    currentLocality: 'Court Road & Central Market',
+    createdAt: '2024-08-10',
+  },
+  {
+    id: 'dp-2',
+    fullName: 'Mohammad Imran',
+    phone: '+91 98971 44322',
+    vehicleType: 'scooter',
+    vehicleNumber: 'UP-11-AF-7123',
+    isActive: true,
+    totalDeliveries: 98,
+    rating: 4.8,
+    currentLocality: 'Clock Tower & Hasanpur Woodcraft Hub',
+    createdAt: '2024-09-01',
+  },
+  {
+    id: 'dp-3',
+    fullName: 'Vikas Saini',
+    phone: '+91 98765 22100',
+    vehicleType: 'e_rickshaw',
+    vehicleNumber: 'UP-11-ER-1029',
+    isActive: true,
+    totalDeliveries: 76,
+    rating: 5.0,
+    currentLocality: 'Delhi Road Commercial Bypass & Industrial Zone',
+    createdAt: '2024-09-18',
+  },
+  {
+    id: 'dp-4',
+    fullName: 'Anil Kumar Prajapati',
+    phone: '+91 98972 99011',
+    vehicleType: 'tempo',
+    vehicleNumber: 'UP-11-TM-3341',
+    isActive: false, // Inactive partner to demonstrate admin activation
+    totalDeliveries: 45,
+    rating: 4.7,
+    currentLocality: 'Ambala Road & Deoband Highway',
+    createdAt: '2024-10-01',
+  },
+];
+
+export const INITIAL_DELIVERY_SETTINGS: DeliverySettings = {
+  mattokartDeliveryEnabled: true,
+  standardDeliveryFee: 50,
+  freeDeliveryThreshold: 1500,
+  sellerDeliveryFee: 0,
+  serviceablePinCodes: ['247001', '247002', '247554', '247451'],
+};
+
 export const INITIAL_ORDERS: Order[] = [
   {
     id: 'ord-1001',
@@ -962,6 +1030,10 @@ export const INITIAL_ORDERS: Order[] = [
     paymentStatus: 'pending',
     orderStatus: 'confirmed',
     notes: 'Please call before delivering in the evening.',
+    deliveryType: 'seller_delivery',
+    deliveryFee: 0,
+    deliveryStatus: 'confirmed',
+    deliveryNotes: 'Dispatched directly by Noor Handicrafts shop assistant.',
     items: [
       {
         id: 'item-101',
@@ -998,6 +1070,10 @@ export const INITIAL_ORDERS: Order[] = [
     paymentStatus: 'completed',
     orderStatus: 'delivered',
     notes: 'Delivered safely at shop premise.',
+    deliveryType: 'seller_delivery',
+    deliveryFee: 0,
+    deliveryStatus: 'delivered',
+    deliveryNotes: 'Delivered by shop owner directly at Ghanta Ghar.',
     items: [
       {
         id: 'item-102',
@@ -1032,8 +1108,16 @@ export const INITIAL_ORDERS: Order[] = [
     totalAmount: 8470,
     paymentMethod: 'cod',
     paymentStatus: 'pending',
-    orderStatus: 'placed',
+    orderStatus: 'out_for_delivery',
     notes: 'Bulk construction sample. Verify stock with driver.',
+    deliveryType: 'mattokart_delivery',
+    deliveryFee: 50,
+    deliveryPartnerId: 'dp-1',
+    deliveryPartnerName: 'Rahul Sharma',
+    deliveryPartnerPhone: '+91 98970 88211',
+    deliveryPartnerVehicle: 'Hero Splendor (UP-11-BC-4589)',
+    deliveryStatus: 'out_for_delivery',
+    deliveryNotes: 'Picked up from Aggarwal Building Materials. Out for delivery on Delhi Road.',
     items: [
       {
         id: 'item-103',
@@ -1047,7 +1131,7 @@ export const INITIAL_ORDERS: Order[] = [
         quantity: 20,
         unit: 'bag',
         totalPrice: 7700,
-        itemStatus: 'pending',
+        itemStatus: 'shipped',
         createdAt: '2024-10-20T09:15:00Z',
       },
       {
@@ -1062,12 +1146,52 @@ export const INITIAL_ORDERS: Order[] = [
         quantity: 1,
         unit: 'piece',
         totalPrice: 770,
-        itemStatus: 'pending',
+        itemStatus: 'shipped',
         createdAt: '2024-10-20T09:15:00Z',
       },
     ],
     createdAt: '2024-10-20T09:15:00Z',
-    updatedAt: '2024-10-20T09:15:00Z',
+    updatedAt: '2024-10-20T10:30:00Z',
+  },
+  {
+    id: 'ord-1004',
+    orderNumber: 'MKT-247001-9104',
+    customerId: 'user-9897311445',
+    customerName: 'Sunil Chawla',
+    customerPhone: '+91 98973 11445',
+    deliveryAddress: 'Street 4, Near Gurudwara, Bajoria Road',
+    locality: 'Bajoria Road',
+    city: 'Saharanpur',
+    state: 'Uttar Pradesh',
+    pinCode: '247001',
+    totalAmount: 1540,
+    paymentMethod: 'cod',
+    paymentStatus: 'pending',
+    orderStatus: 'placed',
+    notes: 'Call on arrival, urgent delivery needed.',
+    deliveryType: 'mattokart_delivery',
+    deliveryFee: 50,
+    deliveryStatus: 'pending', // Pending partner assignment by admin!
+    deliveryNotes: 'Awaiting MattoKart delivery partner assignment by Admin.',
+    items: [
+      {
+        id: 'item-105',
+        orderId: 'ord-1004',
+        productId: 'prod-6',
+        sellerId: 'seller-3',
+        sellerShopName: 'Garg Hardware, Power Tools & Sanitary Store',
+        productName: 'Bosch GSB 550 Heavy Duty 13mm Impact Drill Machine Kit',
+        productImage: 'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=800&q=80',
+        unitPrice: 770,
+        quantity: 2,
+        unit: 'piece',
+        totalPrice: 1540,
+        itemStatus: 'pending',
+        createdAt: '2024-10-21T08:00:00Z',
+      },
+    ],
+    createdAt: '2024-10-21T08:00:00Z',
+    updatedAt: '2024-10-21T08:00:00Z',
   },
 ];
 

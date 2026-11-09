@@ -53,7 +53,39 @@ export interface Product {
   createdAt: string;
 }
 
-export type UserRole = 'customer' | 'seller' | 'admin';
+export type UserRole = 'customer' | 'seller' | 'admin' | 'delivery_partner';
+
+export type DeliveryType = 'seller_delivery' | 'mattokart_delivery';
+
+export type DeliveryStatus =
+  | 'pending'
+  | 'assigned'
+  | 'picked_up'
+  | 'out_for_delivery'
+  | 'delivered'
+  | 'failed'
+  | 'cancelled';
+
+export interface DeliveryPartner {
+  id: string;
+  fullName: string;
+  phone: string;
+  vehicleType: 'bike' | 'scooter' | 'e_rickshaw' | 'tempo' | 'van';
+  vehicleNumber: string;
+  isActive: boolean;
+  totalDeliveries: number;
+  rating: number;
+  currentLocality?: string;
+  createdAt: string;
+}
+
+export interface DeliverySettings {
+  mattokartDeliveryEnabled: boolean;
+  standardDeliveryFee: number;
+  freeDeliveryThreshold: number;
+  sellerDeliveryFee: number;
+  serviceablePinCodes: string[];
+}
 
 export type IdentityVerificationStatus = 'not_started' | 'pending' | 'verified' | 'rejected';
 
@@ -204,6 +236,17 @@ export interface Order {
   orderStatus: OrderStatus;
   notes?: string;
   items: OrderItem[];
+  // Dual Delivery System Fields
+  deliveryType?: DeliveryType;
+  deliveryFee?: number;
+  deliveryPartnerId?: string;
+  deliveryPartnerName?: string;
+  deliveryPartnerPhone?: string;
+  deliveryPartnerVehicle?: string;
+  deliveryStatus?: DeliveryStatus;
+  deliveryFailureReason?: string;
+  deliveryAttemptCount?: number;
+  deliveryNotes?: string;
   createdAt: string;
   updatedAt?: string;
 }
@@ -216,6 +259,7 @@ export type ActiveTab =
   | 'cart'
   | 'checkout'
   | 'orders'
+  | 'delivery-portal'
   | 'seller-register'
   | 'seller-dashboard'
   | 'admin-dashboard'

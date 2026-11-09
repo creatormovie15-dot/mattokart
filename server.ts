@@ -716,11 +716,104 @@ interface ServerOrder {
   orderStatus: 'placed' | 'confirmed' | 'processing' | 'out_for_delivery' | 'delivered' | 'cancelled';
   notes?: string;
   items: ServerOrderItem[];
+  // Dual Delivery Fields
+  deliveryType?: 'seller_delivery' | 'mattokart_delivery';
+  deliveryFee?: number;
+  deliveryPartnerId?: string;
+  deliveryPartnerName?: string;
+  deliveryPartnerPhone?: string;
+  deliveryPartnerVehicle?: string;
+  deliveryStatus?: 'pending' | 'assigned' | 'picked_up' | 'out_for_delivery' | 'delivered' | 'failed' | 'cancelled';
+  deliveryFailureReason?: string;
+  deliveryAttemptCount?: number;
+  deliveryNotes?: string;
   createdAt: string;
   updatedAt?: string;
 }
 
+interface ServerDeliveryPartner {
+  id: string;
+  fullName: string;
+  phone: string;
+  vehicleType: 'bike' | 'scooter' | 'e_rickshaw' | 'tempo' | 'van';
+  vehicleNumber: string;
+  isActive: boolean;
+  totalDeliveries: number;
+  rating: number;
+  currentLocality: string;
+  createdAt: string;
+}
+
+interface ServerDeliverySettings {
+  mattokartDeliveryEnabled: boolean;
+  standardDeliveryFee: number;
+  freeDeliveryThreshold: number;
+  sellerDeliveryFee: number;
+  serviceablePinCodes: string[];
+}
+
 const serverOrders = new Map<string, ServerOrder>();
+const serverDeliveryPartners = new Map<string, ServerDeliveryPartner>();
+
+const initialDeliveryPartnersSeed: ServerDeliveryPartner[] = [
+  {
+    id: 'dp-1',
+    fullName: 'Rahul Sharma',
+    phone: '+91 98970 88211',
+    vehicleType: 'bike',
+    vehicleNumber: 'UP-11-BC-4589',
+    isActive: true,
+    totalDeliveries: 142,
+    rating: 4.9,
+    currentLocality: 'Court Road & Central Market',
+    createdAt: '2024-08-10',
+  },
+  {
+    id: 'dp-2',
+    fullName: 'Mohammad Imran',
+    phone: '+91 98971 44322',
+    vehicleType: 'scooter',
+    vehicleNumber: 'UP-11-AF-7123',
+    isActive: true,
+    totalDeliveries: 98,
+    rating: 4.8,
+    currentLocality: 'Clock Tower & Hasanpur Woodcraft Hub',
+    createdAt: '2024-09-01',
+  },
+  {
+    id: 'dp-3',
+    fullName: 'Vikas Saini',
+    phone: '+91 98765 22100',
+    vehicleType: 'e_rickshaw',
+    vehicleNumber: 'UP-11-ER-1029',
+    isActive: true,
+    totalDeliveries: 76,
+    rating: 5.0,
+    currentLocality: 'Delhi Road Commercial Bypass & Industrial Zone',
+    createdAt: '2024-09-18',
+  },
+  {
+    id: 'dp-4',
+    fullName: 'Anil Kumar Prajapati',
+    phone: '+91 98972 99011',
+    vehicleType: 'tempo',
+    vehicleNumber: 'UP-11-TM-3341',
+    isActive: false,
+    totalDeliveries: 45,
+    rating: 4.7,
+    currentLocality: 'Ambala Road & Deoband Highway',
+    createdAt: '2024-10-01',
+  },
+];
+initialDeliveryPartnersSeed.forEach((p) => serverDeliveryPartners.set(p.id, p));
+
+let serverDeliverySettings: ServerDeliverySettings = {
+  mattokartDeliveryEnabled: true,
+  standardDeliveryFee: 50,
+  freeDeliveryThreshold: 1500,
+  sellerDeliveryFee: 0,
+  serviceablePinCodes: ['247001', '247002', '247554', '247451'],
+};
 
 // Pre-seed sample orders for initial testing
 const initialOrdersSeed: ServerOrder[] = [

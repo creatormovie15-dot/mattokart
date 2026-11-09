@@ -1,5 +1,17 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import { Product, Seller, Category, BuyerEnquiry, Order, OrderItem, OrderStatus } from '../types';
+import {
+  Product,
+  Seller,
+  Category,
+  BuyerEnquiry,
+  Order,
+  OrderItem,
+  OrderStatus,
+  DeliveryPartner,
+  DeliverySettings,
+  DeliveryStatus,
+  DeliveryType,
+} from '../types';
 
 /**
  * Supabase Data Service
@@ -368,6 +380,10 @@ export async function createOrderInSupabase(
       payment_method: order.paymentMethod || 'cod',
       payment_status: order.paymentStatus || 'pending',
       order_status: order.orderStatus || 'placed',
+      delivery_type: order.deliveryType || 'seller_delivery',
+      delivery_fee: order.deliveryFee || 0,
+      delivery_status: order.deliveryStatus || 'pending',
+      delivery_notes: order.deliveryNotes || null,
       notes: order.notes || null,
     };
 
@@ -376,6 +392,12 @@ export async function createOrderInSupabase(
     }
     if (order.customerId && isValidUuid(order.customerId)) {
       orderPayload.customer_id = order.customerId;
+    }
+    if (order.deliveryPartnerId && isValidUuid(order.deliveryPartnerId)) {
+      orderPayload.delivery_partner_id = order.deliveryPartnerId;
+      orderPayload.delivery_partner_name = order.deliveryPartnerName;
+      orderPayload.delivery_partner_phone = order.deliveryPartnerPhone;
+      orderPayload.delivery_partner_vehicle = order.deliveryPartnerVehicle;
     }
 
     const { data: orderRow, error: orderError } = await supabase
@@ -448,6 +470,16 @@ export async function getOrdersFromSupabase(
       paymentMethod: o.payment_method as any,
       paymentStatus: o.payment_status as any,
       orderStatus: o.order_status as any,
+      deliveryType: (o.delivery_type as DeliveryType) || 'seller_delivery',
+      deliveryFee: Number(o.delivery_fee) || 0,
+      deliveryPartnerId: o.delivery_partner_id || undefined,
+      deliveryPartnerName: o.delivery_partner_name || undefined,
+      deliveryPartnerPhone: o.delivery_partner_phone || undefined,
+      deliveryPartnerVehicle: o.delivery_partner_vehicle || undefined,
+      deliveryStatus: (o.delivery_status as DeliveryStatus) || 'pending',
+      deliveryFailureReason: o.delivery_failure_reason || undefined,
+      deliveryAttemptCount: o.delivery_attempt_count || 0,
+      deliveryNotes: o.delivery_notes || undefined,
       notes: o.notes || undefined,
       items: Array.isArray(o.order_items)
         ? o.order_items.map((oi: any) => ({
@@ -511,6 +543,142 @@ export async function updateOrderStatusInSupabase(
         .eq('order_id', orderId);
     }
 
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 14. Delivery Partners Operations
+export async function getDeliveryPartnersFromSupabase(): Promise<DeliveryPartner[] | null> {
+  if (!supabase || !isSupabaseConfigured) return null;
+  try {
+    const { data, error } = await supabase
+      .from('delivery_partners')
+      .select('*')
+      .order('full_name');
+
+    if (error || !data) return null;
+    return data.map((dp: any) => ({
+      id: dp.id,
+      fullName: dp.full_name,
+      phone: dp.phone,
+      vehicleType: dp.vehicle_type,
+      vehicleNumber: dp.vehicle_number,
+      isActive: dp.is_active,
+      totalDeliveries: dp.total_deliveries,
+      rating: Number(dp.rating),
+      currentLocality: dp.current_locality,
+      createdAt: dp.created_at,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveDeliveryPartnerToSupabase(
+  partner: DeliveryPartner
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) return { success: false };
+  try {
+    const { error } = await supabase.from('delivery_partners').insert({
+      full_name: partner.fullName,
+      phone: partner.phone,
+      vehicle_type: partner.vehicleType,
+      vehicle_number: partner.vehicleNumber,
+      is_active: partner.isActive,
+      current_locality: partner.currentLocality || 'Saharanpur Central',
+    });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateDeliveryPartnerInSupabase(
+  partner: DeliveryPartner
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) return { success: false };
+  if (!isValidUuid(partner.id)) return { success: false };
+  try {
+    const { error } = await supabase
+      .from('delivery_partners')
+      .update({
+        full_name: partner.fullName,
+        phone: partner.phone,
+        vehicle_type: partner.vehicleType,
+        vehicle_number: partner.vehicleNumber,
+        is_active: partner.isActive,
+        current_locality: partner.currentLocality,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', partner.id);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 15. Assign Delivery Partner in Supabase
+export async function assignDeliveryPartnerInSupabase(
+  orderId: string,
+  partner: DeliveryPartner
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) return { success: false };
+  if (!isValidUuid(orderId)) return { success: false };
+  try {
+    const { error } = await supabase
+      .from('orders')
+      .update({
+        delivery_partner_id: isValidUuid(partner.id) ? partner.id : null,
+        delivery_partner_name: partner.fullName,
+        delivery_partner_phone: partner.phone,
+        delivery_partner_vehicle: `${partner.vehicleType.toUpperCase()} (${partner.vehicleNumber})`,
+        delivery_status: 'assigned',
+        order_status: 'confirmed',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', orderId);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 16. Update Delivery Status in Supabase
+export async function updateDeliveryStatusInSupabase(
+  orderId: string,
+  deliveryStatus: DeliveryStatus,
+  notes?: string,
+  failureReason?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!supabase || !isSupabaseConfigured) return { success: false };
+  if (!isValidUuid(orderId)) return { success: false };
+  try {
+    const payload: any = {
+      delivery_status: deliveryStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (deliveryStatus === 'delivered') {
+      payload.order_status = 'delivered';
+      payload.payment_status = 'completed';
+    } else if (deliveryStatus === 'out_for_delivery') {
+      payload.order_status = 'out_for_delivery';
+    } else if (deliveryStatus === 'picked_up') {
+      payload.order_status = 'processing';
+    } else if (deliveryStatus === 'failed') {
+      payload.delivery_failure_reason = failureReason || 'Delivery attempt unsuccessful';
+      payload.delivery_attempt_count = 1;
+    }
+
+    if (notes) payload.delivery_notes = notes;
+
+    const { error } = await supabase.from('orders').update(payload).eq('id', orderId);
+    if (error) return { success: false, error: error.message };
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
