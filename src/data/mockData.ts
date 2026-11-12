@@ -7,6 +7,8 @@ import {
   Order,
   DeliveryPartner,
   DeliverySettings,
+  ProductReview,
+  SavedAddress,
 } from '../types';
 
 export const SAHARANPUR_LOCALITIES: SaharanpurLocality[] = [
@@ -1194,4 +1196,97 @@ export const INITIAL_ORDERS: Order[] = [
     updatedAt: '2024-10-21T08:00:00Z',
   },
 ];
+
+export const INITIAL_SAVED_ADDRESSES: SavedAddress[] = [
+  {
+    id: 'addr-1',
+    fullName: 'Aman Singhal',
+    phone: '9876543210',
+    addressLine: 'House #42, Lane 3, Near Civil Court, Court Road',
+    locality: 'Court Road',
+    city: 'Saharanpur',
+    state: 'Uttar Pradesh',
+    pinCode: '247001',
+    isDefault: true,
+    tag: 'Home',
+  },
+  {
+    id: 'addr-2',
+    fullName: 'Aman Singhal',
+    phone: '9876543210',
+    addressLine: 'Shop #12, Commercial Block, Delhi Road Bypass',
+    locality: 'Delhi Road (Highway bypass)',
+    city: 'Saharanpur',
+    state: 'Uttar Pradesh',
+    pinCode: '247002',
+    isDefault: false,
+    tag: 'Work',
+  },
+];
+
+export const INITIAL_REVIEWS: Record<string, ProductReview[]> = {
+  'prod-1': [
+    {
+      id: 'rev-101',
+      productId: 'prod-1',
+      userName: 'Pradeep Sharma',
+      rating: 5,
+      title: 'Shandar Sheesham Mandir! Authentic Saharanpur craft',
+      comment: 'The brass inlay work and deep carving are truly mesmerizing. Delivered carefully to my home in Court Road. Noor Handicrafts shopkeeper is very polite.',
+      verifiedPurchase: true,
+      locality: 'Court Road, Saharanpur',
+      createdAt: '2024-10-12',
+    },
+    {
+      id: 'rev-102',
+      productId: 'prod-1',
+      userName: 'Vipul Goel',
+      rating: 5,
+      title: 'Top quality seasoned wood',
+      comment: 'Completely solid Sheesham with zero termites. Looks like a heritage royal temple. Best price compared to Delhi showrooms.',
+      verifiedPurchase: true,
+      locality: 'Delhi Road, Saharanpur',
+      createdAt: '2024-10-15',
+    },
+  ],
+  'prod-2': [
+    {
+      id: 'rev-201',
+      productId: 'prod-2',
+      userName: 'Meenakshi Rastogi',
+      rating: 5,
+      title: 'Beautiful 4-panel screen partition',
+      comment: 'Heavy solid carving. Perfect for creating a puja partition in our drawing room.',
+      verifiedPurchase: true,
+      locality: 'Clock Tower, Saharanpur',
+      createdAt: '2024-09-28',
+    },
+  ],
+  'prod-4': [
+    {
+      id: 'rev-401',
+      productId: 'prod-4',
+      userName: 'Er. Rajesh Bansal',
+      rating: 5,
+      title: 'Fresh batch UltraTech Cement with fast site delivery',
+      comment: 'Ordered 50 bags for our foundation work. Delivered within 3 hours directly from Aggarwal Building Materials godown.',
+      verifiedPurchase: true,
+      locality: 'Delhi Road, Saharanpur',
+      createdAt: '2024-10-05',
+    },
+  ],
+  'prod-6': [
+    {
+      id: 'rev-601',
+      productId: 'prod-6',
+      userName: 'Mohit Kamboj',
+      rating: 5,
+      title: 'Genuine Bosch 13mm Impact Drill Machine',
+      comment: 'Original GST invoice and warranty card stamped by Garg Hardware. Came with full masonry drill bit kit.',
+      verifiedPurchase: true,
+      locality: 'Nehru Market, Saharanpur',
+      createdAt: '2024-10-18',
+    },
+  ],
+};
 

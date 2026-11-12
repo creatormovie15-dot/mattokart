@@ -29,6 +29,8 @@ interface CatalogViewProps {
   onAddToCart?: (product: Product, quantity?: number) => void;
   onBuyNow?: (product: Product, quantity?: number) => void;
   currentLocality: SaharanpurLocality;
+  wishlist?: string[];
+  onToggleWishlist?: (productId: string) => void;
 }
 
 export const CatalogView: React.FC<CatalogViewProps> = ({
@@ -43,6 +45,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   onAddToCart,
   onBuyNow,
   currentLocality,
+  wishlist = [],
+  onToggleWishlist,
 }) => {
   const [selectedLocalityFilter, setSelectedLocalityFilter] = useState<string>('all');
   const [maxPrice, setMaxPrice] = useState<number>(50000);
@@ -476,6 +480,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   onContactSeller={onContactSeller}
                   onAddToCart={onAddToCart}
                   onBuyNow={onBuyNow}
+                  isWishlisted={wishlist.includes(product.id)}
+                  onToggleWishlist={onToggleWishlist}
                 />
               ))}
             </div>

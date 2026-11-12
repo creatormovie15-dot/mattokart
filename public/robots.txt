@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /seller/dashboard
+
+Sitemap: https://mattokart.netlify.app/sitemap.xml

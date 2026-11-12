@@ -15,6 +15,11 @@ import {
   Order,
   OrderStatus,
   OrderItem,
+  ProductReview,
+  SavedAddress,
+  DeliveryPartner,
+  DeliverySettings,
+  DeliveryType,
 } from './types';
 import {
   INITIAL_CATEGORIES,
@@ -23,6 +28,10 @@ import {
   INITIAL_ENQUIRIES,
   INITIAL_ORDERS,
   SAHARANPUR_LOCALITIES,
+  INITIAL_SAVED_ADDRESSES,
+  INITIAL_REVIEWS,
+  INITIAL_DELIVERY_PARTNERS,
+  INITIAL_DELIVERY_SETTINGS,
 } from './data/mockData';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -45,6 +54,7 @@ import { LegalView } from './views/LegalView';
 import { CartView } from './views/CartView';
 import { CheckoutView } from './views/CheckoutView';
 import { OrdersView } from './views/OrdersView';
+import { WishlistView } from './views/WishlistView';
 import { isSupabaseConfigured } from './lib/supabaseClient';
 import {
   getCategoriesFromSupabase,
@@ -131,6 +141,8 @@ export default function App() {
       setActiveTab('checkout');
     } else if (path === '/orders') {
       setActiveTab('orders');
+    } else if (path === '/wishlist') {
+      setActiveTab('wishlist');
     } else if (path === '/shops') {
       setActiveTab('shops');
     } else if (path === '/seller/register') {
@@ -180,6 +192,28 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>(() => safeLoad('cart', []));
   const [orders, setOrders] = useState<Order[]>(() => safeLoad('orders', INITIAL_ORDERS));
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  // Customer experience state: Wishlist, Recently Viewed, Saved Addresses, Product Reviews
+  const [wishlist, setWishlist] = useState<string[]>(() =>
+    safeLoad('wishlist', ['prod-1', 'prod-3'])
+  );
+  const [recentlyViewedIds, setRecentlyViewedIds] = useState<string[]>(() =>
+    safeLoad('recently_viewed', ['prod-1', 'prod-2', 'prod-4'])
+  );
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>(() =>
+    safeLoad('saved_addresses', INITIAL_SAVED_ADDRESSES)
+  );
+  const [productReviews, setProductReviews] = useState<ProductReview[]>(() =>
+    safeLoad('reviews', Object.values(INITIAL_REVIEWS).flat())
+  );
+
+  // Dual Delivery System: MattoKart Express Fleet & Settings
+  const [deliveryPartners, setDeliveryPartners] = useState<DeliveryPartner[]>(() =>
+    safeLoad('delivery_partners', INITIAL_DELIVERY_PARTNERS)
+  );
+  const [deliverySettings, setDeliverySettings] = useState<DeliverySettings>(() =>
+    safeLoad('delivery_settings', INITIAL_DELIVERY_SETTINGS)
+  );
 
   // Active seller profile for Seller Dashboard testing
   const [currentSellerId, setCurrentSellerId] = useState<string>('seller-1');
@@ -304,6 +338,9 @@ export default function App() {
       case 'orders':
         navigate('/orders');
         break;
+      case 'wishlist':
+        navigate('/wishlist');
+        break;
       case 'seller-register':
         navigate('/seller/register');
         break;
@@ -335,10 +372,14 @@ export default function App() {
     }
   };
 
-  const handleSelectCategory = (catId: CategoryId) => {
+  const handleSelectCategory = (catId: CategoryId | 'all') => {
     setCatalogCategory(catId);
     setActiveTab('catalog');
-    navigate(`/products?category=${encodeURIComponent(catId)}`);
+    if (catId === 'all') {
+      navigate('/products');
+    } else {
+      navigate(`/products?category=${encodeURIComponent(catId)}`);
+    }
   };
 
   const handleSelectShopProducts = (shopName: string) => {
@@ -353,6 +394,87 @@ export default function App() {
     setActiveTab('legal');
     navigate(`/legal/${doc}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Wishlist handler
+  const handleToggleWishlist = (productId: string) => {
+    setWishlist((prev) => {
+      const exists = prev.includes(productId);
+      const updated = exists ? prev.filter((id) => id !== productId) : [...prev, productId];
+      safeSave('wishlist', updated);
+      if (!exists) {
+        addToast('success', 'Added to Wishlist (इच्छा सूची में जोड़ा)', 'Product saved to your wishlist.');
+      } else {
+        addToast('info', 'Removed from Wishlist', 'Product removed from your wishlist.');
+      }
+      return updated;
+    });
+  };
+
+  // Product detail & Recently Viewed handler
+  const handleViewProductDetail = (p: Product) => {
+    setSelectedProductForDetail(p);
+    setRecentlyViewedIds((prev) => {
+      const filtered = prev.filter((id) => id !== p.id);
+      const updated = [p.id, ...filtered].slice(0, 10);
+      safeSave('recently_viewed', updated);
+      return updated;
+    });
+  };
+
+  // Review submission handler
+  const handleAddReview = (newReview: {
+    productId: string;
+    userName: string;
+    rating: number;
+    title: string;
+    comment: string;
+    locality?: string;
+  }) => {
+    const created: ProductReview = {
+      id: `rev-${Date.now()}`,
+      productId: newReview.productId,
+      userName: newReview.userName,
+      rating: newReview.rating,
+      title: newReview.title,
+      comment: newReview.comment,
+      verifiedPurchase: true,
+      locality: newReview.locality || selectedLocality.name,
+      createdAt: new Date().toISOString(),
+      status: 'approved',
+    };
+    setProductReviews((prev) => {
+      const updated = [created, ...prev];
+      safeSave('reviews', updated);
+      return updated;
+    });
+    addToast('success', 'Review Submitted (समीक्षा दर्ज)', 'Thank you for your rating & feedback!');
+  };
+
+  // MattoKart Delivery Fleet assignment by Admin
+  const handleAssignDeliveryPartner = (orderId: string, partnerId: string) => {
+    const partner = deliveryPartners.find((p) => p.id === partnerId);
+    if (!partner) return;
+    setOrders((prev) => {
+      const updated = prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              deliveryType: 'mattokart_delivery' as DeliveryType,
+              deliveryPartnerId: partner.id,
+              deliveryPartnerName: partner.fullName,
+              deliveryPartnerPhone: partner.phone,
+              deliveryStatus: 'assigned' as const,
+              orderStatus: (o.orderStatus === 'placed' || o.orderStatus === 'confirmed' ? 'processing' : o.orderStatus) as OrderStatus,
+              updatedAt: new Date().toISOString(),
+              notes: `${o.notes || ''} | MattoKart Rider Assigned: ${partner.fullName} (${partner.phone})`.trim(),
+            }
+          : o
+      );
+      safeSave('orders', updated);
+      return updated;
+    });
+    addToast('success', 'Rider Assigned', `${partner.fullName} (${partner.vehicleNumber}) has been assigned to Order.`);
   };
 
   // Shopping Cart Handlers
@@ -418,7 +540,7 @@ export default function App() {
     addToast('info', 'Cart Cleared', 'Your shopping cart is now empty.');
   };
 
-  // Checkout & Order Placement
+  // Checkout & Order Placement with Dual Delivery support
   const handlePlaceOrder = async (orderData: {
     customerName: string;
     customerPhone: string;
@@ -430,10 +552,13 @@ export default function App() {
     pinCode: string;
     paymentMethod: 'cod' | 'pay_on_delivery';
     notes?: string;
+    deliveryType: DeliveryType;
+    deliveryFee: number;
   }): Promise<Order | null> => {
     if (cart.length === 0) return null;
 
-    const totalAmount = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const itemsTotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const totalAmount = itemsTotal + (orderData.deliveryFee || 0);
     const orderId = `ord-${Date.now()}`;
     const orderNum = `MKT-${orderData.pinCode || '247001'}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -466,6 +591,9 @@ export default function App() {
       state: orderData.state || 'Uttar Pradesh',
       pinCode: orderData.pinCode,
       totalAmount,
+      deliveryType: orderData.deliveryType || 'seller_delivery',
+      deliveryFee: orderData.deliveryFee || 0,
+      deliveryStatus: orderData.deliveryType === 'mattokart_delivery' ? 'requested' : 'assigned',
       paymentMethod: orderData.paymentMethod,
       paymentStatus: 'pending',
       orderStatus: 'placed',
@@ -915,9 +1043,11 @@ export default function App() {
         onPerformSearch={handlePerformSearch}
         enquiriesCount={enquiries.length}
         cartCount={cartCount}
+        wishlistCount={wishlist.length}
         currentUser={currentUser}
         onOpenAuthModal={handleOpenAuthModal}
         onLogout={handleLogout}
+        onSelectCategory={handleSelectCategory}
       />
 
       {/* Body Views */}
@@ -930,7 +1060,7 @@ export default function App() {
               sellers={sellers}
               selectedLocality={selectedLocality}
               onSelectCategory={handleSelectCategory}
-              onViewProductDetails={(p) => setSelectedProductForDetail(p)}
+              onViewProductDetails={handleViewProductDetail}
               onContactSeller={(p) => setSelectedProductForEnquiry(p)}
               onAddToCart={handleAddToCart}
               onBuyNow={handleBuyNow}
@@ -941,6 +1071,9 @@ export default function App() {
               onGoToSellerRegister={() => handleSetActiveTab('seller-register')}
               onOpenLocationModal={() => setIsLocationModalOpen(true)}
               onSelectShopProducts={handleSelectShopProducts}
+              wishlist={wishlist}
+              onToggleWishlist={handleToggleWishlist}
+              recentlyViewedIds={recentlyViewedIds}
             />
           )}
 
@@ -952,11 +1085,24 @@ export default function App() {
               onSelectCategory={setCatalogCategory}
               searchQuery={searchQuery}
               setSearchQuery={setSearchQuery}
-              onViewProductDetails={(p) => setSelectedProductForDetail(p)}
+              onViewProductDetails={handleViewProductDetail}
               onContactSeller={(p) => setSelectedProductForEnquiry(p)}
               onAddToCart={handleAddToCart}
               onBuyNow={handleBuyNow}
               currentLocality={selectedLocality}
+              wishlist={wishlist}
+              onToggleWishlist={handleToggleWishlist}
+            />
+          )}
+
+          {activeTab === 'wishlist' && (
+            <WishlistView
+              wishlistIds={wishlist}
+              products={products}
+              onRemoveFromWishlist={handleToggleWishlist}
+              onAddToCart={handleAddToCart}
+              onGoToCatalog={() => handleSetActiveTab('catalog')}
+              onViewProductDetails={handleViewProductDetail}
             />
           )}
 
@@ -968,7 +1114,7 @@ export default function App() {
               onClearCart={handleClearCart}
               onProceedToCheckout={() => handleSetActiveTab('checkout')}
               onGoToCatalog={() => handleSetActiveTab('catalog')}
-              onViewProductDetails={(p) => setSelectedProductForDetail(p)}
+              onViewProductDetails={handleViewProductDetail}
             />
           )}
 
@@ -977,6 +1123,7 @@ export default function App() {
               cart={cart}
               currentUser={currentUser}
               selectedLocality={selectedLocality}
+              savedAddresses={savedAddresses}
               onPlaceOrder={handlePlaceOrder}
               onGoBackToCart={() => handleSetActiveTab('cart')}
               onGoToOrders={() => handleSetActiveTab('orders')}
@@ -986,7 +1133,17 @@ export default function App() {
 
           {activeTab === 'orders' && (
             <OrdersView
-              orders={orders}
+              orders={
+                currentUser
+                  ? orders.filter(
+                      (o) =>
+                        o.customerId === currentUser.id ||
+                        (currentUser.phone &&
+                          o.customerPhone.replace(/\D/g, '').includes(currentUser.phone.replace(/\D/g, ''))) ||
+                        o.id.startsWith('ord-')
+                    )
+                  : orders
+              }
               onCancelOrder={handleCancelOrder}
               onBuyAgain={(item) => {
                 const matched = products.find((p) => p.id === item.productId);
@@ -1069,6 +1226,7 @@ export default function App() {
               categories={categories}
               enquiries={enquiries}
               orders={orders}
+              deliveryPartners={deliveryPartners}
               onApproveSeller={handleApproveSeller}
               onRejectSeller={handleRejectSeller}
               onToggleSuspendSeller={handleToggleSuspendSeller}
@@ -1077,6 +1235,7 @@ export default function App() {
               onAddCategory={handleAddCategory}
               onUpdateSellerFeeStatus={handleUpdateSellerFeeStatus}
               onAdminUpdateOrderStatus={handleUpdateOrderStatus}
+              onAssignDeliveryPartner={handleAssignDeliveryPartner}
             />
           )}
 
@@ -1118,13 +1277,23 @@ export default function App() {
         }}
       />
 
-      {/* Product Detail Modal */}
+      {/* Product Detail Modal with Reviews & Wishlist */}
       <ProductDetailModal
         product={selectedProductForDetail}
         onClose={() => setSelectedProductForDetail(null)}
         onOpenEnquiry={(p) => setSelectedProductForEnquiry(p)}
         onAddToCart={handleAddToCart}
         onBuyNow={handleBuyNow}
+        isWishlisted={selectedProductForDetail ? wishlist.includes(selectedProductForDetail.id) : false}
+        onToggleWishlist={handleToggleWishlist}
+        reviews={productReviews.filter((r) => r.productId === selectedProductForDetail?.id)}
+        onAddReview={handleAddReview}
+        relatedProducts={products.filter(
+          (p) =>
+            p.categoryId === selectedProductForDetail?.categoryId &&
+            p.id !== selectedProductForDetail?.id
+        )}
+        onSelectProduct={handleViewProductDetail}
       />
 
       {/* Direct Buyer Enquiry Modal */}

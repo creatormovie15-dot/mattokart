@@ -59,6 +59,8 @@ export type DeliveryType = 'seller_delivery' | 'mattokart_delivery';
 
 export type DeliveryStatus =
   | 'pending'
+  | 'requested'
+  | 'confirmed'
   | 'assigned'
   | 'picked_up'
   | 'out_for_delivery'
@@ -251,6 +253,32 @@ export interface Order {
   updatedAt?: string;
 }
 
+export interface ProductReview {
+  id: string;
+  productId: string;
+  userName: string;
+  rating: number; // 1 to 5
+  title: string;
+  comment: string;
+  verifiedPurchase: boolean;
+  locality?: string;
+  createdAt: string;
+  status?: 'pending' | 'approved' | 'rejected';
+}
+
+export interface SavedAddress {
+  id: string;
+  fullName: string;
+  phone: string;
+  addressLine: string;
+  locality: string;
+  city: string;
+  state: string;
+  pinCode: string;
+  isDefault?: boolean;
+  tag?: 'Home' | 'Work' | 'Shop';
+}
+
 export type ActiveTab =
   | 'home'
   | 'catalog'
@@ -259,6 +287,8 @@ export type ActiveTab =
   | 'cart'
   | 'checkout'
   | 'orders'
+  | 'wishlist'
+  | 'account'
   | 'delivery-portal'
   | 'seller-register'
   | 'seller-dashboard'

@@ -29,7 +29,7 @@ import {
   TrendingUp,
   Search,
 } from 'lucide-react';
-import { Seller, Product, Category, BuyerEnquiry, CategoryId, VerificationAuditLog, Order, OrderStatus } from '../types';
+import { Seller, Product, Category, BuyerEnquiry, CategoryId, VerificationAuditLog, Order, OrderStatus, DeliveryPartner, DeliverySettings } from '../types';
 import {
   adminApproveSeller,
   adminRejectSeller,
@@ -53,6 +53,7 @@ interface AdminDashboardViewProps {
   categories: Category[];
   enquiries: BuyerEnquiry[];
   orders?: Order[];
+  deliveryPartners?: DeliveryPartner[];
   onApproveSeller: (sellerId: string) => void;
   onRejectSeller: (sellerId: string) => void;
   onToggleSuspendSeller: (sellerId: string) => void;
@@ -61,6 +62,7 @@ interface AdminDashboardViewProps {
   onAddCategory: (category: Category) => void;
   onUpdateSellerFeeStatus: (sellerId: string, status: Seller['registrationFeeStatus']) => void;
   onAdminUpdateOrderStatus?: (orderId: string, status: OrderStatus, notes?: string) => Promise<boolean>;
+  onAssignDeliveryPartner?: (orderId: string, partnerId: string) => void;
 }
 
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
@@ -69,6 +71,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   categories,
   enquiries,
   orders = [],
+  deliveryPartners = [],
   onApproveSeller,
   onRejectSeller,
   onToggleSuspendSeller,
@@ -77,6 +80,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onAddCategory,
   onUpdateSellerFeeStatus,
   onAdminUpdateOrderStatus,
+  onAssignDeliveryPartner,
 }) => {
   // Gate admin access via passcode
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -84,7 +88,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [authError, setAuthError] = useState('');
 
   const [activeTab, setActiveTab] = useState<
-    'orders' | 'applications' | 'products' | 'sellers' | 'categories' | 'fees' | 'enquiries' | 'database' | 'audit'
+    'orders' | 'applications' | 'products' | 'sellers' | 'categories' | 'deliveries' | 'fees' | 'enquiries' | 'database' | 'audit'
   >('orders');
 
   const [adminOrderSearch, setAdminOrderSearch] = useState('');
@@ -518,6 +522,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         >
           <CreditCard className="w-4 h-4" />
           <span>Fee Verification Tracker</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('deliveries')}
+          className={`pb-3 border-b-2 transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 ${
+            activeTab === 'deliveries'
+              ? 'border-orange-600 text-orange-600 font-bold'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Truck className="w-4 h-4" />
+          <span>Delivery Fleet & Logistics</span>
         </button>
 
         <button
@@ -1628,6 +1644,181 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       </td>
                       <td className="p-3 text-slate-600 text-[11px] max-w-xs">
                         {log.notes || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Delivery Fleet & Logistics Management */}
+      {activeTab === 'deliveries' && (
+        <div className="space-y-6">
+          {/* Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                Total Fleet Partners
+              </span>
+              <div className="text-2xl font-black text-slate-900 font-mono">
+                {deliveryPartners.length}
+              </div>
+              <p className="text-[10px] text-slate-400">Verified Saharanpur riders</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                Active On-Duty Riders
+              </span>
+              <div className="text-2xl font-black text-emerald-700 font-mono">
+                {deliveryPartners.filter((p) => p.isActive).length}
+              </div>
+              <p className="text-[10px] text-emerald-800 font-medium">Ready for dispatch</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                Pending Fleet Dispatches
+              </span>
+              <div className="text-2xl font-black text-orange-600 font-mono">
+                {orders.filter((o) => o.deliveryType === 'mattokart_delivery' && (!o.deliveryPartnerId || o.deliveryStatus === 'pending')).length}
+              </div>
+              <p className="text-[10px] text-orange-800 font-medium">Awaiting rider assignment</p>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                Standard Delivery Charge
+              </span>
+              <div className="text-2xl font-black text-slate-900 font-mono">
+                ₹50
+              </div>
+              <p className="text-[10px] text-slate-500">Free for orders &gt; ₹1,500</p>
+            </div>
+          </div>
+
+          {/* Pending Dispatches Table */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-3 p-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-orange-600" />
+                  <span>Orders Awaiting MattoKart Rider Assignment</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Assign available delivery partners to orders where customer selected MattoKart Express delivery
+                </p>
+              </div>
+            </div>
+
+            {orders.filter((o) => o.deliveryType === 'mattokart_delivery' && (!o.deliveryPartnerId || o.deliveryStatus === 'pending')).length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-500">
+                ✓ No pending dispatches. All MattoKart delivery orders have been assigned to riders.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="p-3">Order #</th>
+                      <th className="p-3">Customer & Contact</th>
+                      <th className="p-3">Destination Address</th>
+                      <th className="p-3">Amount</th>
+                      <th className="p-3">Assign Verified Partner</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {orders
+                      .filter((o) => o.deliveryType === 'mattokart_delivery' && (!o.deliveryPartnerId || o.deliveryStatus === 'pending'))
+                      .map((o) => (
+                        <tr key={o.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="p-3 font-mono font-bold text-slate-900">{o.orderNumber}</td>
+                          <td className="p-3">
+                            <div className="font-semibold text-slate-800">{o.customerName}</div>
+                            <div className="font-mono text-slate-500">{o.customerPhone}</div>
+                          </td>
+                          <td className="p-3 text-slate-700 max-w-xs truncate">
+                            {o.deliveryAddress}, {o.locality}
+                          </td>
+                          <td className="p-3 font-mono font-bold text-slate-900">
+                            ₹{new Intl.NumberFormat('en-IN').format(o.totalAmount)}
+                          </td>
+                          <td className="p-3">
+                            <select
+                              onChange={(e) => {
+                                const partnerId = e.target.value;
+                                if (partnerId && onAssignDeliveryPartner) {
+                                  onAssignDeliveryPartner(o.id, partnerId);
+                                }
+                              }}
+                              defaultValue=""
+                              className="px-2.5 py-1.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-orange-500"
+                            >
+                              <option value="" disabled>Select Driver Partner...</option>
+                              {deliveryPartners.filter((p) => p.isActive).map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.fullName} ({p.vehicleType.toUpperCase()} - {p.vehicleNumber})
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Registered Delivery Fleet Table */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden space-y-3 p-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>MattoKart Delivery Partners Fleet ({deliveryPartners.length})</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Verified delivery riders operating across Saharanpur urban markets and industrial belts
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px]">
+                  <tr>
+                    <th className="p-3">Rider Name</th>
+                    <th className="p-3">Mobile Contact</th>
+                    <th className="p-3">Vehicle Details</th>
+                    <th className="p-3">Primary Operating Locality</th>
+                    <th className="p-3">Total Deliveries</th>
+                    <th className="p-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {deliveryPartners.map((dp) => (
+                    <tr key={dp.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="p-3 font-bold text-slate-900">{dp.fullName}</td>
+                      <td className="p-3 font-mono text-slate-600">{dp.phone}</td>
+                      <td className="p-3 capitalize text-slate-800">
+                        {dp.vehicleType} <span className="font-mono text-slate-400">({dp.vehicleNumber})</span>
+                      </td>
+                      <td className="p-3 text-slate-600">{dp.currentLocality || 'Saharanpur Central'}</td>
+                      <td className="p-3 font-mono font-bold text-slate-800">{dp.totalDeliveries}</td>
+                      <td className="p-3">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            dp.isActive
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {dp.isActive ? 'Active On-Duty' : 'Offline'}
+                        </span>
                       </td>
                     </tr>
                   ))}
