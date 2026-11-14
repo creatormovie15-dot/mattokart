@@ -443,7 +443,7 @@ app.post('/api/sellers/:id/verify-identity', (req: Request, res: Response) => {
       if (!gstinRegex.test(cleanGst)) {
         res.status(400).json({
           success: false,
-          error: 'Invalid GSTIN format. Uttar Pradesh GSTIN must start with "09" followed by 10-character PAN (e.g. 09AABPN1234F1Z8).',
+          error: 'Invalid GSTIN format. Must be a 15-character Indian GSTIN (2-digit State code 01–38 + 10-char PAN + entity + Z + check, e.g. 07AAACM1234F1Z5).',
         });
         return;
       }
@@ -682,6 +682,48 @@ app.post('/api/products/validate-publish-permission', (req: Request, res: Respon
 // API ROUTES: E-COMMERCE ORDERS & MULTI-VENDOR FULFILMENT
 // ============================================================================
 
+type ServerOrderStatus =
+  | 'placed'
+  | 'payment_confirmed'
+  | 'confirmed'
+  | 'processing'
+  | 'packed'
+  | 'shipped'
+  | 'out_for_delivery'
+  | 'delivered'
+  | 'cancelled'
+  | 'return_requested'
+  | 'refunded';
+
+interface ServerTrackingEvent {
+  id: string;
+  orderId: string;
+  status: ServerOrderStatus;
+  title: string;
+  description?: string;
+  location?: string;
+  actorRole?: 'customer' | 'seller' | 'admin' | 'system';
+  createdAt: string;
+}
+
+interface ServerSellerSubOrder {
+  subOrderNumber: string;
+  orderId: string;
+  sellerId: string;
+  sellerShopName: string;
+  subtotal: number;
+  shippingFee: number;
+  codFee: number;
+  totalAmount: number;
+  deliveryMode: 'seller_delivery' | 'mattokart_delivery' | 'interstate_courier' | 'seller_transport';
+  deliveryStatus: 'pending' | 'requested' | 'assigned' | 'picked_up' | 'out_for_delivery' | 'delivered' | 'failed' | 'cancelled';
+  orderStatus: ServerOrderStatus;
+  courierName?: string;
+  trackingNumber?: string;
+  estimatedDelivery?: string;
+  createdAt: string;
+}
+
 interface ServerOrderItem {
   id: string;
   orderId: string;
@@ -706,24 +748,34 @@ interface ServerOrder {
   customerPhone: string;
   customerEmail?: string;
   deliveryAddress: string;
+  landmark?: string;
   locality: string;
+  district?: string;
   city: string;
   state: string;
   pinCode: string;
+  subtotalAmount?: number;
+  codFee?: number;
   totalAmount: number;
   paymentMethod: 'cod' | 'pay_on_delivery' | 'upi_on_delivery' | 'offline_direct';
   paymentStatus: 'pending' | 'completed' | 'failed' | 'refunded';
-  orderStatus: 'placed' | 'confirmed' | 'processing' | 'out_for_delivery' | 'delivered' | 'cancelled';
+  orderStatus: ServerOrderStatus;
   notes?: string;
   items: ServerOrderItem[];
-  // Dual Delivery Fields
-  deliveryType?: 'seller_delivery' | 'mattokart_delivery';
+  sellerOrders?: ServerSellerSubOrder[];
+  trackingEvents?: ServerTrackingEvent[];
+  // Dual & Pan-India Delivery Fields
+  deliveryType?: 'seller_delivery' | 'mattokart_delivery' | 'interstate_courier' | 'seller_transport';
+  shippingZone?: 'local' | 'intercity' | 'interstate';
+  courierPartner?: string;
+  trackingNumber?: string;
+  estimatedDeliveryWindow?: string;
   deliveryFee?: number;
   deliveryPartnerId?: string;
   deliveryPartnerName?: string;
   deliveryPartnerPhone?: string;
   deliveryPartnerVehicle?: string;
-  deliveryStatus?: 'pending' | 'assigned' | 'picked_up' | 'out_for_delivery' | 'delivered' | 'failed' | 'cancelled';
+  deliveryStatus?: 'pending' | 'requested' | 'assigned' | 'picked_up' | 'out_for_delivery' | 'delivered' | 'failed' | 'cancelled';
   deliveryFailureReason?: string;
   deliveryAttemptCount?: number;
   deliveryNotes?: string;
@@ -949,16 +1001,31 @@ initialOrdersSeed.forEach((o) => serverOrders.set(o.id, o));
 app.post('/api/orders', (req: Request, res: Response) => {
   try {
     const {
+      id: clientOrderId,
+      orderNumber: clientOrderNumber,
       customerId,
       customerName,
       customerPhone: rawPhone,
       customerEmail,
       deliveryAddress,
+      landmark,
       locality,
+      district,
+      city,
+      state,
       pinCode,
       paymentMethod = 'cod',
       notes,
       items,
+      deliveryType,
+      deliveryFee,
+      codFee,
+      subtotalAmount,
+      shippingZone,
+      courierPartner,
+      estimatedDeliveryWindow,
+      sellerOrders: rawSellerOrders,
+      trackingEvents: rawTrackingEvents,
     } = req.body;
 
     if (!customerName || !customerName.trim()) {
@@ -977,8 +1044,8 @@ app.post('/api/orders', (req: Request, res: Response) => {
       return;
     }
 
-    if (!pinCode || !/^\d{6}$/.test(String(pinCode).trim())) {
-      res.status(400).json({ success: false, error: 'Valid 6-digit PIN code is required (e.g. 247001)' });
+    if (!pinCode || !/^[1-9]\d{5}$/.test(String(pinCode).trim())) {
+      res.status(400).json({ success: false, error: 'Valid 6-digit Indian PIN code is required (e.g. 247001 or 110001)' });
       return;
     }
 
@@ -987,9 +1054,16 @@ app.post('/api/orders', (req: Request, res: Response) => {
       return;
     }
 
-    const orderId = `ord-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
+    const orderId =
+      typeof clientOrderId === 'string' && clientOrderId.trim()
+        ? clientOrderId.trim()
+        : `ord-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
     const cleanPin = String(pinCode).trim();
-    const orderNumber = `MKT-${cleanPin}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const orderNumber =
+      typeof clientOrderNumber === 'string' && clientOrderNumber.trim()
+        ? clientOrderNumber.trim()
+        : `MKT-${cleanPin}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const nowIso = new Date().toISOString();
 
     let computedTotal = 0;
     const orderItems: ServerOrderItem[] = items.map((item: any, idx: number) => {
@@ -999,11 +1073,11 @@ app.post('/api/orders', (req: Request, res: Response) => {
       computedTotal += lineTotal;
 
       return {
-        id: `item-${Date.now()}-${idx}`,
+        id: item.id || `item-${Date.now()}-${idx}`,
         orderId,
         productId: item.productId || `prod-${idx}`,
         sellerId: item.sellerId || 'seller-1',
-        sellerShopName: item.sellerShopName || 'Saharanpur Merchant',
+        sellerShopName: item.sellerShopName || 'MattoKart Verified Seller',
         productName: item.productName || 'Marketplace Item',
         productImage: item.productImage || '',
         unitPrice,
@@ -1011,9 +1085,62 @@ app.post('/api/orders', (req: Request, res: Response) => {
         unit: item.unit || 'piece',
         totalPrice: lineTotal,
         itemStatus: 'pending',
-        createdAt: new Date().toISOString(),
+        createdAt: nowIso,
       };
     });
+
+    const parsedDeliveryFee = Math.max(0, Number(deliveryFee) || 0);
+    const parsedCodFee = Math.max(0, Number(codFee) || 0);
+    const effectiveSubtotal = Math.max(computedTotal, Number(subtotalAmount) || 0) || computedTotal;
+    const grandTotal = effectiveSubtotal + parsedDeliveryFee + parsedCodFee;
+    const normalizedDeliveryType: ServerOrder['deliveryType'] =
+      deliveryType === 'mattokart_delivery' ||
+      deliveryType === 'interstate_courier' ||
+      deliveryType === 'seller_transport'
+        ? deliveryType
+        : 'seller_delivery';
+
+    const sellerOrders: ServerSellerSubOrder[] | undefined = Array.isArray(rawSellerOrders)
+      ? rawSellerOrders.map((so: any, idx: number) => ({
+          subOrderNumber: so.subOrderNumber || `${orderNumber}-S${idx + 1}`,
+          orderId,
+          sellerId: String(so.sellerId || 'seller-1'),
+          sellerShopName: String(so.sellerShopName || 'MattoKart Verified Seller'),
+          subtotal: Math.max(0, Number(so.subtotal) || 0),
+          shippingFee: Math.max(0, Number(so.shippingFee) || 0),
+          codFee: Math.max(0, Number(so.codFee) || 0),
+          totalAmount: Math.max(0, Number(so.totalAmount) || 0),
+          deliveryMode:
+            so.deliveryMode === 'mattokart_delivery' ||
+            so.deliveryMode === 'interstate_courier' ||
+            so.deliveryMode === 'seller_transport'
+              ? so.deliveryMode
+              : 'seller_delivery',
+          deliveryStatus: so.deliveryStatus || 'pending',
+          orderStatus: so.orderStatus || 'placed',
+          courierName: so.courierName ? String(so.courierName).trim() : undefined,
+          // Never fabricate synthetic tracking numbers on creation
+          trackingNumber: undefined,
+          estimatedDelivery: so.estimatedDelivery ? String(so.estimatedDelivery).trim() : undefined,
+          createdAt: nowIso,
+        }))
+      : undefined;
+
+    const trackingEvents: ServerTrackingEvent[] =
+      Array.isArray(rawTrackingEvents) && rawTrackingEvents.length > 0
+        ? rawTrackingEvents
+        : [
+            {
+              id: `trk-${Date.now()}`,
+              orderId,
+              status: 'placed',
+              title: 'Order Placed (Cash on Delivery)',
+              description: `Order #${orderNumber} received for ${city ? String(city).trim() : 'Saharanpur'} (${cleanPin}).`,
+              location: `${city ? String(city).trim() : 'Saharanpur'}, ${state ? String(state).trim() : 'Uttar Pradesh'}`,
+              actorRole: 'customer',
+              createdAt: nowIso,
+            },
+          ];
 
     const newOrder: ServerOrder = {
       id: orderId,
@@ -1023,28 +1150,40 @@ app.post('/api/orders', (req: Request, res: Response) => {
       customerPhone: phoneCheck.formatted,
       customerEmail: customerEmail ? String(customerEmail).trim() : undefined,
       deliveryAddress: deliveryAddress.trim(),
-      locality: locality ? String(locality).trim() : 'Saharanpur Central',
-      city: 'Saharanpur',
-      state: 'Uttar Pradesh',
+      landmark: landmark ? String(landmark).trim() : undefined,
+      locality: locality ? String(locality).trim() : 'Main Area',
+      district: district ? String(district).trim() : city ? String(city).trim() : 'Saharanpur',
+      city: city ? String(city).trim() : 'Saharanpur',
+      state: state ? String(state).trim() : 'Uttar Pradesh',
       pinCode: cleanPin,
-      totalAmount: computedTotal,
+      subtotalAmount: effectiveSubtotal,
+      codFee: parsedCodFee,
+      totalAmount: grandTotal,
+      deliveryType: normalizedDeliveryType,
+      deliveryFee: parsedDeliveryFee,
+      shippingZone: shippingZone || (cleanPin.startsWith('247') ? 'local' : 'interstate'),
+      courierPartner: courierPartner ? String(courierPartner).trim() : undefined,
+      estimatedDeliveryWindow: estimatedDeliveryWindow ? String(estimatedDeliveryWindow).trim() : undefined,
+      trackingNumber: undefined,
       paymentMethod: paymentMethod === 'pay_on_delivery' ? 'pay_on_delivery' : 'cod',
       paymentStatus: 'pending',
       orderStatus: 'placed',
       notes: notes ? String(notes).trim() : undefined,
       items: orderItems,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      sellerOrders,
+      trackingEvents,
+      createdAt: nowIso,
+      updatedAt: nowIso,
     };
 
     serverOrders.set(orderId, newOrder);
 
-    console.log(`[ORDER-CREATED] Order #${orderNumber} created for ${customerName} (Total: ₹${computedTotal}, COD)`);
+    console.log(`[ORDER-CREATED] Order #${orderNumber} created for ${customerName} (${newOrder.city}, ${newOrder.state} - Total: ₹${grandTotal}, COD)`);
 
     res.status(201).json({
       success: true,
       order: newOrder,
-      message: `Order #${orderNumber} placed successfully! Cash on Delivery verified.`,
+      message: `Order #${orderNumber} placed successfully! Delivery to ${newOrder.city}, ${newOrder.state}.`,
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || 'Failed to place order' });
@@ -1059,7 +1198,6 @@ app.get('/api/orders', (req: Request, res: Response) => {
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 
-    // If filtered by customer ID or phone
     if (customerId) {
       ordersList = ordersList.filter((o) => o.customerId === String(customerId));
     } else if (customerPhone) {
@@ -1067,16 +1205,17 @@ app.get('/api/orders', (req: Request, res: Response) => {
       ordersList = ordersList.filter((o) => o.customerPhone.replace(/\D/g, '').includes(cleanDigits));
     }
 
-    // If filtered by seller ID (strict RLS rule: seller only sees orders containing their items, and only their items)
+    // Strict RLS: seller only sees orders containing their items, and only their items & sub-order
     if (sellerId) {
       const targetSellerId = String(sellerId);
       ordersList = ordersList
-        .map((order) => {
+        .map((order): ServerOrder | null => {
           const sellerItems = order.items.filter((item) => item.sellerId === targetSellerId);
           if (sellerItems.length === 0) return null;
           return {
             ...order,
             items: sellerItems,
+            sellerOrders: order.sellerOrders?.filter((so) => so.sellerId === targetSellerId),
           };
         })
         .filter((o): o is ServerOrder => o !== null);
@@ -1092,11 +1231,11 @@ app.get('/api/orders', (req: Request, res: Response) => {
   }
 });
 
-// 3. Update Order Status (Seller or Admin)
+// 3. Update Order Status (Seller or Admin — Full 10-Stage Lifecycle)
 app.patch('/api/orders/:id/status', (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { status, sellerId, itemStatus, notes } = req.body;
+    const { status, sellerId, itemStatus, courierName, trackingNumber, notes } = req.body;
 
     const order = serverOrders.get(id);
     if (!order) {
@@ -1104,32 +1243,120 @@ app.patch('/api/orders/:id/status', (req: Request, res: Response) => {
       return;
     }
 
-    const validStatuses = ['placed', 'confirmed', 'processing', 'out_for_delivery', 'delivered', 'cancelled'];
+    const validStatuses: ServerOrderStatus[] = [
+      'placed',
+      'payment_confirmed',
+      'confirmed',
+      'processing',
+      'packed',
+      'shipped',
+      'out_for_delivery',
+      'delivered',
+      'cancelled',
+      'return_requested',
+      'refunded',
+    ];
     if (status && !validStatuses.includes(status)) {
       res.status(400).json({ success: false, error: `Invalid order status: ${status}` });
       return;
     }
 
+    const nowIso = new Date().toISOString();
+
+    if (sellerId && Array.isArray(order.sellerOrders) && order.sellerOrders.length > 0) {
+      order.sellerOrders = order.sellerOrders.map((so) =>
+        so.sellerId === sellerId
+          ? {
+              ...so,
+              orderStatus: status || so.orderStatus,
+              courierName: courierName ? String(courierName).trim() : so.courierName,
+              trackingNumber: trackingNumber ? String(trackingNumber).trim() : so.trackingNumber,
+              deliveryStatus:
+                status === 'delivered'
+                  ? 'delivered'
+                  : status === 'out_for_delivery'
+                  ? 'out_for_delivery'
+                  : status === 'shipped'
+                  ? 'picked_up'
+                  : status === 'cancelled'
+                  ? 'cancelled'
+                  : so.deliveryStatus,
+            }
+          : so
+      );
+    }
+
     if (status) {
       order.orderStatus = status;
     }
+    if (courierName) {
+      order.courierPartner = String(courierName).trim();
+    }
+    if (trackingNumber) {
+      order.trackingNumber = String(trackingNumber).trim();
+    }
 
-    // If seller updated their specific items
-    if (sellerId && itemStatus) {
+    const mappedItemStatus: ServerOrderItem['itemStatus'] | undefined =
+      status === 'cancelled' || status === 'refunded'
+        ? 'cancelled'
+        : status === 'delivered'
+        ? 'delivered'
+        : status === 'shipped' || status === 'out_for_delivery'
+        ? 'shipped'
+        : status === 'packed'
+        ? 'ready_for_pickup'
+        : status === 'processing' || status === 'confirmed' || status === 'payment_confirmed'
+        ? 'confirmed'
+        : itemStatus;
+
+    if (mappedItemStatus) {
       order.items = order.items.map((item) =>
-        item.sellerId === sellerId ? { ...item, itemStatus } : item
+        !sellerId || item.sellerId === sellerId ? { ...item, itemStatus: mappedItemStatus } : item
       );
-    } else if (status === 'cancelled') {
-      order.items = order.items.map((item) => ({ ...item, itemStatus: 'cancelled' }));
-    } else if (status === 'delivered') {
-      order.items = order.items.map((item) => ({ ...item, itemStatus: 'delivered' }));
+    }
+
+    if (status === 'delivered') {
       order.paymentStatus = 'completed';
+    } else if (status === 'refunded') {
+      order.paymentStatus = 'refunded';
     }
 
     if (notes) {
-      order.notes = notes;
+      order.notes = order.notes ? `${order.notes} | ${String(notes).trim()}` : String(notes).trim();
     }
-    order.updatedAt = new Date().toISOString();
+
+    if (status) {
+      const stageTitles: Record<ServerOrderStatus, string> = {
+        placed: 'Order Placed',
+        payment_confirmed: 'Payment Confirmed',
+        confirmed: 'Order Confirmed',
+        processing: 'Processing Order',
+        packed: 'Packed & Ready for Dispatch',
+        shipped: 'Shipped / Dispatched',
+        out_for_delivery: 'Out for Delivery',
+        delivered: 'Delivered',
+        cancelled: 'Order Cancelled',
+        return_requested: 'Return Requested',
+        refunded: 'Refund Processed',
+      };
+      const event: ServerTrackingEvent = {
+        id: `trk-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        orderId: order.id,
+        status,
+        title: stageTitles[status as ServerOrderStatus] || status,
+        description: notes
+          ? String(notes).trim()
+          : trackingNumber
+          ? `Tracking / LR #: ${String(trackingNumber).trim()}`
+          : undefined,
+        location: `${order.city}, ${order.state}`,
+        actorRole: sellerId ? 'seller' : 'admin',
+        createdAt: nowIso,
+      };
+      order.trackingEvents = [...(order.trackingEvents || []), event];
+    }
+
+    order.updatedAt = nowIso;
     serverOrders.set(id, order);
 
     res.json({
@@ -1154,11 +1381,16 @@ app.post('/api/orders/:id/cancel', (req: Request, res: Response) => {
       return;
     }
 
-    // Strict cancellation rule: can only cancel if placed or confirmed
-    if (order.orderStatus === 'out_for_delivery' || order.orderStatus === 'delivered') {
+    if (
+      order.orderStatus === 'packed' ||
+      order.orderStatus === 'shipped' ||
+      order.orderStatus === 'out_for_delivery' ||
+      order.orderStatus === 'delivered' ||
+      order.orderStatus === 'refunded'
+    ) {
       res.status(400).json({
         success: false,
-        error: `Order cannot be cancelled because it is already ${order.orderStatus.replace('_', ' ')}. Please contact support for assistance.`,
+        error: `Order cannot be cancelled because it is already ${order.orderStatus.replace(/_/g, ' ')}. Please contact support for assistance.`,
       });
       return;
     }
@@ -1168,10 +1400,30 @@ app.post('/api/orders/:id/cancel', (req: Request, res: Response) => {
       return;
     }
 
+    const nowIso = new Date().toISOString();
     order.orderStatus = 'cancelled';
     order.notes = order.notes ? `${order.notes} | Cancellation Reason: ${reason}` : `Cancellation Reason: ${reason}`;
     order.items = order.items.map((item) => ({ ...item, itemStatus: 'cancelled' }));
-    order.updatedAt = new Date().toISOString();
+    if (order.sellerOrders) {
+      order.sellerOrders = order.sellerOrders.map((so) => ({
+        ...so,
+        orderStatus: 'cancelled',
+        deliveryStatus: 'cancelled',
+      }));
+    }
+    order.trackingEvents = [
+      ...(order.trackingEvents || []),
+      {
+        id: `trk-${Date.now()}`,
+        orderId: order.id,
+        status: 'cancelled',
+        title: 'Order Cancelled',
+        description: reason,
+        actorRole: 'customer',
+        createdAt: nowIso,
+      },
+    ];
+    order.updatedAt = nowIso;
 
     serverOrders.set(id, order);
 
@@ -1185,12 +1437,69 @@ app.post('/api/orders/:id/cancel', (req: Request, res: Response) => {
   }
 });
 
+// 5. Return Request (Customer on Delivered Orders)
+app.post('/api/orders/:id/return', (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason = 'Customer requested return' } = req.body;
+
+    const order = serverOrders.get(id);
+    if (!order) {
+      res.status(404).json({ success: false, error: 'Order not found' });
+      return;
+    }
+
+    if (order.orderStatus !== 'delivered') {
+      res.status(400).json({
+        success: false,
+        error: 'Return requests can only be submitted after an order is marked delivered.',
+      });
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    order.orderStatus = 'return_requested';
+    order.notes = order.notes ? `${order.notes} | Return Requested: ${reason}` : `Return Requested: ${reason}`;
+    if (order.sellerOrders) {
+      order.sellerOrders = order.sellerOrders.map((so) => ({
+        ...so,
+        orderStatus: 'return_requested',
+      }));
+    }
+    order.trackingEvents = [
+      ...(order.trackingEvents || []),
+      {
+        id: `trk-${Date.now()}`,
+        orderId: order.id,
+        status: 'return_requested',
+        title: 'Return Requested by Customer',
+        description: reason,
+        actorRole: 'customer',
+        createdAt: nowIso,
+      },
+    ];
+    order.updatedAt = nowIso;
+
+    serverOrders.set(id, order);
+
+    res.json({
+      success: true,
+      order,
+      message: 'Return request submitted for seller & admin verification.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to submit return request' });
+  }
+});
+
 // System Status Endpoint
 app.get('/api/system/status', (_req: Request, res: Response) => {
   const hasSupabase = Boolean(process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_PUBLISHABLE_KEY);
   const hasTwilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
   const hasMsg91 = Boolean(process.env.MSG91_AUTH_KEY);
   const hasKyc = Boolean(process.env.DIGILOCKER_CLIENT_ID || process.env.KYC_PROVIDER_API_KEY);
+  const hasRazorpay = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
+  const hasShiprocket = Boolean(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD);
 
   res.json({
     status: 'operational',
@@ -1200,6 +1509,18 @@ app.get('/api/system/status', (_req: Request, res: Response) => {
       supabaseDatabase: {
         configured: hasSupabase,
         note: hasSupabase ? 'Active' : 'Awaiting VITE_SUPABASE_URL in .env',
+      },
+      stageBCheckoutCodTracking: {
+        configured: true,
+        note: 'Multi-vendor Cart, Address Book, COD Checkout, Heavy Transport & 10-Stage Tracking active',
+      },
+      razorpayPayments: {
+        configured: hasRazorpay,
+        note: hasRazorpay ? 'Live Razorpay active' : 'Scheduled for Stage C (Awaiting RAZORPAY_KEY_ID & SECRET)',
+      },
+      shiprocketLogistics: {
+        configured: hasShiprocket,
+        note: hasShiprocket ? 'Live Shiprocket active' : 'Scheduled for Stage C (Awaiting Shiprocket API credentials)',
       },
       smsGateway: {
         configured: hasTwilio || hasMsg91,

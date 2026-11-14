@@ -16,9 +16,11 @@ import {
   Heart,
   Star,
   CheckCircle2,
-  Share2,
+  AlertCircle,
+  Scale,
 } from 'lucide-react';
-import { Product, ProductReview } from '../types';
+import { Product, ProductReview, SaharanpurLocality } from '../types';
+import { calculateProductShippingQuote } from '../data/indiaData';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -31,6 +33,8 @@ interface ProductDetailModalProps {
   reviews?: ProductReview[];
   onAddReview?: (review: { productId: string; userName: string; rating: number; title: string; comment: string; locality?: string }) => void;
   relatedProducts?: Product[];
+  allProducts?: Product[];
+  selectedLocality?: SaharanpurLocality;
   onSelectProduct?: (product: Product) => void;
 }
 
@@ -45,12 +49,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   reviews = [],
   onAddReview,
   relatedProducts = [],
+  allProducts = [],
+  selectedLocality,
   onSelectProduct,
 }) => {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [quantity, setQuantity] = useState<number>(() =>
     product?.minOrderQuantity ? Math.max(1, product.minOrderQuantity) : 1
   );
+  const [checkPin, setCheckPin] = useState<string>(selectedLocality?.pinCode || '247001');
 
   // Review form states
   const [showReviewForm, setShowReviewForm] = useState(false);
@@ -58,10 +65,30 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [newTitle, setNewTitle] = useState('');
   const [newComment, setNewComment] = useState('');
   const [newUserName, setNewUserName] = useState('');
-  const [newLocality, setNewLocality] = useState('Saharanpur');
+  const [newLocality, setNewLocality] = useState(selectedLocality?.city || 'Saharanpur');
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
   if (!product) return null;
+
+  const shippingQuote = calculateProductShippingQuote(product, checkPin, quantity);
+
+  // Price Comparison across other approved sellers in same subcategory or close product keywords
+  const comparePool = (allProducts.length > 0 ? allProducts : relatedProducts).filter(
+    (p) => p.id !== product.id && p.status === 'approved'
+  );
+  const productTokens = product.name
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length >= 3);
+  const sellerComparisons = comparePool
+    .filter((p) => {
+      if (p.subcategory.toLowerCase() === product.subcategory.toLowerCase()) return true;
+      const candidateLower = p.name.toLowerCase();
+      const overlap = productTokens.filter((tok) => candidateLower.includes(tok)).length;
+      return overlap >= 2;
+    })
+    .sort((a, b) => a.price - b.price)
+    .slice(0, 4);
 
   const fallbackImg =
     'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80';
@@ -213,7 +240,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 </div>
                 <div className="text-slate-500 flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{product.sellerLocality}, Saharanpur, UP</span>
+                  <span>
+                    {product.sellerLocality}, {product.sellerCity || 'Saharanpur'}, {product.sellerState || 'Uttar Pradesh'}
+                    {product.sellerPinCode ? ` (${product.sellerPinCode})` : ''}
+                  </span>
                 </div>
                 <div className="pt-2 border-t border-slate-200 text-slate-600">
                   <div className="font-semibold text-slate-800 mb-1">Service & Delivery Coverage:</div>
@@ -232,11 +262,32 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <div className="lg:col-span-7 space-y-5">
               {/* Product Header */}
               <div>
+                <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                  {product.condition && product.condition !== 'new' ? (
+                    <span className="px-2 py-0.5 rounded bg-teal-50 border border-teal-200 text-teal-800 text-[10px] font-bold uppercase">
+                      {product.condition === 'used_good' ? 'Used / Pre-Owned' : 'Refurbished Grade-A'}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-bold uppercase">
+                      Brand New
+                    </span>
+                  )}
+                  <span className="px-2 py-0.5 rounded bg-orange-50 border border-orange-200 text-orange-800 text-[10px] font-bold">
+                    {product.shippingScope === 'local_only'
+                      ? 'Local City Delivery'
+                      : product.shippingScope === 'state_regional'
+                      ? 'State & Regional Transport'
+                      : 'Pan-India Shipping'}
+                  </span>
+                </div>
+
                 <h1 className="text-xl sm:text-2xl font-bold text-slate-900 leading-snug">
                   {product.name}
                 </h1>
                 <div className="text-xs text-slate-500 mt-1">
                   Brand / Shop: <span className="font-semibold text-orange-600">{product.sellerShopName}</span>
+                  {' · '}
+                  <span>{product.sellerCity || 'Saharanpur'}, {product.sellerState || 'Uttar Pradesh'}</span>
                 </div>
 
                 {/* Rating Bar */}
@@ -268,7 +319,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 {formattedOriginalPrice && (
                   <div className="text-xs text-slate-500">
                     M.R.P.: <span className="line-through">₹{formattedOriginalPrice}</span>
-                    <span className="text-emerald-700 font-semibold ml-2">Inclusive of all local taxes</span>
+                    <span className="text-emerald-700 font-semibold ml-2">Inclusive of applicable taxes</span>
                   </div>
                 )}
               </div>
@@ -286,8 +337,60 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   )}
                 </div>
                 <div className="text-xs text-slate-500">
-                  Direct dispatch from <strong>{product.sellerShopName}</strong> godown in {product.sellerLocality}.
+                  Direct dispatch from <strong>{product.sellerShopName}</strong> in {product.sellerCity || product.sellerLocality}, {product.sellerState || 'Uttar Pradesh'}.
                 </div>
+              </div>
+
+              {/* Pan-India PIN Code Delivery & Shipping Quote Checker */}
+              <div className="p-3.5 rounded-xl bg-sky-50/70 border border-sky-200 space-y-2.5 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <Truck className="w-4 h-4 text-[#f97316]" />
+                    <span>Check Delivery Availability &amp; Shipping Fee</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      maxLength={6}
+                      value={checkPin}
+                      onChange={(e) => setCheckPin(e.target.value.replace(/\D/g, ''))}
+                      placeholder="6-digit PIN"
+                      className="w-28 px-2.5 py-1 text-xs font-mono border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/30"
+                    />
+                  </div>
+                </div>
+
+                {shippingQuote.serviceable ? (
+                  <div className="space-y-1.5">
+                    {shippingQuote.availableMethods.map((m) => (
+                      <div
+                        key={m.type}
+                        className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-sky-100"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="font-bold text-slate-900">
+                            {m.label} · <span className="text-emerald-700">{m.estimatedWindow}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate">
+                            {m.courierName} · Est. {m.estimatedDates}
+                          </div>
+                        </div>
+                        <div className="font-extrabold text-slate-900 shrink-0">
+                          {m.fee === 0 ? (
+                            <span className="text-emerald-700">FREE</span>
+                          ) : (
+                            `₹${m.fee}`
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>{shippingQuote.reasonIfUnserviceable}</span>
+                  </div>
+                )}
               </div>
 
               {/* Purchase Box (Amazon Yellow/Orange Buttons) */}
@@ -406,11 +509,75 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <div className="space-y-1">
                 <h3 className="font-bold text-sm text-slate-900">About this Item</h3>
                 <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">
-                  {product.description || 'Authentic product sourced directly from verified local manufacturers in Saharanpur, Uttar Pradesh.'}
+                  {product.description || 'Authentic product sourced directly from verified sellers on MattoKart.'}
                 </p>
               </div>
             </div>
           </div>
+
+          {/* Compare Sellers & Prices Across India */}
+          {sellerComparisons.length > 0 && (
+            <div className="pt-6 border-t border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+                  <Scale className="w-4 h-4 text-[#f97316]" />
+                  <span>Compare Sellers &amp; Prices on Similar Listings</span>
+                </h3>
+                <span className="text-xs text-slate-500">Pan-India Price Check</span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {sellerComparisons.map((alt) => {
+                  const diff = alt.price - product.price;
+                  return (
+                    <div
+                      key={alt.id}
+                      className="p-3 rounded-xl border border-slate-200 bg-slate-50 hover:border-orange-300 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="font-bold text-slate-900 truncate">{alt.name}</div>
+                        <div className="text-slate-600 truncate">
+                          {alt.sellerShopName} · {alt.sellerCity || alt.sellerLocality}, {alt.sellerState || 'UP'}
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px]">
+                          <span className="text-amber-600 font-bold">★ {alt.sellerRating}</span>
+                          <span className="text-slate-400">·</span>
+                          <span className="text-slate-600">
+                            {alt.shippingScope === 'local_only'
+                              ? 'Local Only'
+                              : alt.shippingScope === 'state_regional'
+                              ? 'State/Regional'
+                              : 'Ships Pan-India'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 space-y-1">
+                        <div className="font-extrabold text-sm text-slate-900">
+                          ₹{new Intl.NumberFormat('en-IN').format(alt.price)}
+                        </div>
+                        {diff < 0 ? (
+                          <div className="text-[10px] font-bold text-emerald-700">
+                            ₹{Math.abs(diff)} lower
+                          </div>
+                        ) : diff > 0 ? (
+                          <div className="text-[10px] text-slate-500">+₹{diff}</div>
+                        ) : (
+                          <div className="text-[10px] text-slate-500">Same price</div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onSelectProduct && onSelectProduct(alt)}
+                          className="px-2.5 py-1 rounded bg-[#091e3a] hover:bg-[#f97316] text-white font-bold text-[10px] transition-colors cursor-pointer"
+                        >
+                          View Offer
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Customer Reviews Section */}
           <div id="reviews" className="pt-6 border-t border-slate-200 space-y-6">
@@ -560,7 +727,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           {/* Related Products Strip */}
           {relatedProducts.length > 0 && (
             <div className="pt-6 border-t border-slate-200 space-y-4">
-              <h3 className="font-bold text-sm text-slate-900">Similar Products from Saharanpur Dukaans</h3>
+              <h3 className="font-bold text-sm text-slate-900">Similar Products from Verified Indian Sellers</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {relatedProducts.slice(0, 4).map((rel) => (
                   <div

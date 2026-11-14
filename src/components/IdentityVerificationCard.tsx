@@ -48,7 +48,7 @@ export const IdentityVerificationCard: React.FC<IdentityVerificationCardProps> =
         return (
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Verified Saharanpur Merchant</span>
+            <span>Verified India Merchant</span>
           </span>
         );
       case 'pending':
@@ -143,7 +143,7 @@ export const IdentityVerificationCard: React.FC<IdentityVerificationCardProps> =
             </h3>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Legal identity assurance for Saharanpur buyers and merchants.
+            Legal identity assurance for buyers and merchants across India.
           </p>
         </div>
         <div className="shrink-0">{getStatusBadge()}</div>
@@ -160,7 +160,7 @@ export const IdentityVerificationCard: React.FC<IdentityVerificationCardProps> =
             In compliance with Section 29 of the Aadhaar Act (2016) and UIDAI circulars, MattoKart{' '}
             <strong>never requests, collects, or stores raw 12-digit Aadhaar numbers or Aadhaar OTPs</strong>.
             Authorized electronic verification is conducted solely through Government DigiLocker OAuth or
-            recognized business credentials (GSTIN / Saharanpur Municipal Trade License / Physical Field Inspection).
+            recognized business credentials (All-India GSTIN / Udyam MSME / Municipal Trade License).
           </p>
         </div>
       </div>
@@ -256,7 +256,7 @@ export const IdentityVerificationCard: React.FC<IdentityVerificationCardProps> =
                 <span>GSTIN Verification (Recommended)</span>
               </div>
               <p className="text-[11px] text-slate-500 leading-tight">
-                Uttar Pradesh GST identification number (starts with 09). Verified against official tax jurisdiction.
+                Valid 15-digit Indian GST identification number (any State/UT code 01–38).
               </p>
             </div>
 
@@ -271,10 +271,10 @@ export const IdentityVerificationCard: React.FC<IdentityVerificationCardProps> =
             >
               <div className="flex items-center gap-2 font-bold text-xs mb-1">
                 <Building className="w-4 h-4 text-orange-600" />
-                <span>Saharanpur Municipal License</span>
+                <span>Municipal Trade License / Shop Act</span>
               </div>
               <p className="text-[11px] text-slate-500 leading-tight">
-                Saharanpur Nagar Nigam Shop & Commercial Establishment Trade License number.
+                Municipal Shop &amp; Commercial Establishment Trade License number anywhere in India.
               </p>
             </div>
 
@@ -331,7 +331,7 @@ export const IdentityVerificationCard: React.FC<IdentityVerificationCardProps> =
                 required
               />
               <p className="text-[11px] text-slate-500 mt-1">
-                State code 09 identifies Uttar Pradesh registered businesses.
+                Starts with your 2-digit State/UT GST code (e.g. 07 Delhi, 09 UP, 27 MH, 29 KA).
               </p>
             </div>
           )}

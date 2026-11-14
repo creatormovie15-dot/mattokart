@@ -8,8 +8,10 @@ import {
   CheckCircle2,
   Search,
   Package,
+  Globe2,
 } from 'lucide-react';
 import { Seller, Product } from '../types';
+import { INDIAN_STATES_UTS } from '../data/indiaData';
 
 interface ShopsViewProps {
   sellers: Seller[];
@@ -25,13 +27,13 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
   onGoToSellerRegister,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedLocality, setSelectedLocality] = useState('all');
+  const [selectedState, setSelectedState] = useState('all');
 
   const filteredSellers = sellers.filter((s) => {
     if (s.status !== 'active') return false;
     if (
-      selectedLocality !== 'all' &&
-      !(s.locality || '').toLowerCase().includes(selectedLocality.toLowerCase())
+      selectedState !== 'all' &&
+      (s.state || 'Uttar Pradesh').toLowerCase() !== selectedState.toLowerCase()
     ) {
       return false;
     }
@@ -40,33 +42,50 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
       const matchName = (s.shopName || '').toLowerCase().includes(q);
       const matchOwner = (s.ownerName || '').toLowerCase().includes(q);
       const matchLoc = (s.locality || '').toLowerCase().includes(q);
+      const matchCity = (s.city || '').toLowerCase().includes(q);
+      const matchState = (s.state || '').toLowerCase().includes(q);
       const matchDesc = (s.description || '').toLowerCase().includes(q);
-      if (!matchName && !matchOwner && !matchLoc && !matchDesc) return false;
+      if (!matchName && !matchOwner && !matchLoc && !matchCity && !matchState && !matchDesc) return false;
     }
     return true;
   });
 
+  const sellerTypeLabel = (type?: Seller['sellerType']) => {
+    switch (type) {
+      case 'wholesaler':
+        return 'Wholesaler';
+      case 'manufacturer':
+        return 'Manufacturer';
+      case 'artisan':
+        return 'Artisan';
+      case 'individual':
+        return 'Individual Seller';
+      default:
+        return 'Shopkeeper';
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-8">
       {/* Header banner */}
-      <div className="bg-gradient-to-r from-orange-950 via-slate-900 to-amber-950 text-white rounded-3xl p-6 sm:p-10 shadow-xl border border-orange-500/20">
+      <div className="bg-gradient-to-r from-[#061529] via-[#091e3a] to-[#122b4e] text-white rounded-3xl p-6 sm:p-10 shadow-xl border border-orange-500/20">
         <div className="max-w-2xl space-y-3">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/20 border border-orange-400/30 text-orange-200 text-xs font-semibold">
-            <Store className="w-3.5 h-3.5" />
-            <span>Saharanpur Local Dukaan Network</span>
+            <Globe2 className="w-3.5 h-3.5" />
+            <span>Pan-India Merchant &amp; Artisan Network · Starting Hub: Saharanpur</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-extrabold font-brand tracking-tight">
-            Kharedari Seedhi Saharanpur ki Dukaano Se
+            Buy Directly from Verified Indian Sellers
           </h1>
           <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-            Discover verified retailers, lumber yards, hardware distributors, and artisan workshops across Saharanpur. Contact proprietors directly via phone or WhatsApp.
+            Discover verified shopkeepers, manufacturers, wholesalers, and independent artisans across India. Shop locally or order Pan-India with direct dispatch.
           </p>
           <div className="pt-2">
             <button
               onClick={onGoToSellerRegister}
-              className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors"
+              className="px-5 py-2.5 bg-[#f97316] hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
             >
-              Register Your Shop — FREE First Year (₹0)
+              Register Your Shop Anywhere in India — FREE First Year (₹0)
             </button>
           </div>
         </div>
@@ -74,19 +93,34 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
 
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full sm:w-96">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search shop name, owner, or products..."
-            className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
-          />
+        <div className="flex flex-col sm:flex-row gap-2.5 w-full sm:w-auto">
+          <div className="relative w-full sm:w-80">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search shop, city, state, or products..."
+              className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+            />
+          </div>
+
+          <select
+            value={selectedState}
+            onChange={(e) => setSelectedState(e.target.value)}
+            className="px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+          >
+            <option value="all">All States &amp; UTs (India)</option>
+            {INDIAN_STATES_UTS.map((st) => (
+              <option key={st.name} value={st.name}>
+                {st.name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="text-xs text-slate-500">
-          Showing <strong className="text-slate-900">{filteredSellers.length}</strong> verified shops
+          Showing <strong className="text-slate-900">{filteredSellers.length}</strong> verified sellers
         </div>
       </div>
 
@@ -99,7 +133,7 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
 
           const cleanPhone = seller.phone.replace(/\D/g, '');
           const whatsappUrl = `https://wa.me/${cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone}?text=${encodeURIComponent(
-            `Namaste ${seller.ownerName}! I found your shop "${seller.shopName}" on MattoKart Saharanpur. I would like to inquire about your products.`
+            `Namaste ${seller.ownerName}! I found your shop "${seller.shopName}" on MattoKart. I would like to inquire about your products.`
           )}`;
 
           return (
@@ -120,6 +154,9 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
                       (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=600&q=80';
                     }}
                   />
+                  <div className="absolute top-2.5 left-2.5 bg-[#091e3a]/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    {sellerTypeLabel(seller.sellerType)}
+                  </div>
                   <div className="absolute top-2.5 right-2.5 bg-white/95 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
                     <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Verified Seller
                   </div>
@@ -160,11 +197,17 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
                   <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs text-slate-500">
                     <div className="flex items-start gap-1.5">
                       <MapPin className="w-3.5 h-3.5 text-orange-600 shrink-0 mt-0.5" />
-                      <span className="leading-tight">{seller.address}, {seller.locality}</span>
+                      <span className="leading-tight">
+                        {seller.address}, {seller.city || seller.locality}, {seller.state || 'Uttar Pradesh'} ({seller.pinCode})
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <Truck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>Delivery Radius: {seller.deliveryRadiusKm} km</span>
+                      <span>
+                        {seller.shipsPanIndia
+                          ? 'Pan-India Shipping + Local Dispatch'
+                          : `Local / Regional Delivery (${seller.deliveryRadiusKm} km)`}
+                      </span>
                     </div>
                   </div>
                 </div>

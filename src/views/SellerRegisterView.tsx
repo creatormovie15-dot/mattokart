@@ -23,12 +23,15 @@ import {
 import {
   Category,
   CategoryId,
+  CategorySuggestion,
   Seller,
+  SellerType,
   UnitType,
   IdentityVerificationMethod,
   AuthUser,
 } from '../types';
 import { SAHARANPUR_LOCALITIES } from '../data/mockData';
+import { INDIAN_STATES_UTS, resolveIndianPinMetadata, checkProhibitedProduct } from '../data/indiaData';
 import { sendMobileOtp, verifyMobileOtp } from '../lib/authClient';
 
 interface SellerRegisterViewProps {
@@ -37,6 +40,7 @@ interface SellerRegisterViewProps {
   onGoToDashboard: () => void;
   currentUser?: AuthUser | null;
   onOpenAuthModal?: () => void;
+  onSuggestCategory?: (suggestion: Omit<CategorySuggestion, 'id' | 'status' | 'createdAt'>) => void;
 }
 
 export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
@@ -45,12 +49,14 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
   onGoToDashboard,
   currentUser,
   onOpenAuthModal,
+  onSuggestCategory,
 }) => {
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
 
   // Form states - Step 1: Owner and Contact
   const [ownerName, setOwnerName] = useState(currentUser?.fullName || '');
   const [shopName, setShopName] = useState('');
+  const [sellerType, setSellerType] = useState<SellerType>('shopkeeper');
   const [phone, setPhone] = useState(
     currentUser?.phone ? currentUser.phone.replace('+91', '').trim() : ''
   );
@@ -61,34 +67,43 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
   const [testOtpCode, setTestOtpCode] = useState<string | null>(null);
   const [email, setEmail] = useState('');
 
-  // Step 2: Address
+  // Step 2: All-India Address & Shipping Coverage
   const [address, setAddress] = useState('');
+  const [stateName, setStateName] = useState('Uttar Pradesh');
+  const [city, setCity] = useState('Saharanpur');
   const [locality, setLocality] = useState(SAHARANPUR_LOCALITIES[0].name);
-  const [city] = useState('Saharanpur');
   const [pinCode, setPinCode] = useState(SAHARANPUR_LOCALITIES[0].pinCode);
   const [landmark, setLandmark] = useState('');
-  const [deliveryRadiusKm, setDeliveryRadiusKm] = useState(30);
+  const [shipsPanIndia, setShipsPanIndia] = useState(true);
+  const [deliveryRadiusKm, setDeliveryRadiusKm] = useState(50);
 
-  // Step 3: Categories & Initial Product (Goal 2)
+  // Step 3: Categories, Category Suggestion & Initial Product
   const [selectedCategories, setSelectedCategories] = useState<CategoryId[]>(['furniture']);
   const [description, setDescription] = useState('');
+  const [showSuggestCategory, setShowSuggestCategory] = useState(false);
+  const [suggestedCatName, setSuggestedCatName] = useState('');
+  const [suggestedCatHindi, setSuggestedCatHindi] = useState('');
+  const [suggestedCatSubs, setSuggestedCatSubs] = useState('');
+  const [suggestedCatReason, setSuggestedCatReason] = useState('');
+  const [categorySuggestionSent, setCategorySuggestionSent] = useState(false);
   const [hasInitialProduct, setHasInitialProduct] = useState(true);
   const [initialProdName, setInitialProdName] = useState('Handcrafted Teak Mandir / Carved Artifact');
   const [initialProdPrice, setInitialProdPrice] = useState<number>(3500);
   const [initialProdUnit, setInitialProdUnit] = useState<UnitType>('piece');
   const [initialProdStock, setInitialProdStock] = useState<number>(5);
   const [initialProdDescription, setInitialProdDescription] = useState(
-    'Premium seasoned solid Sheesham wood carving, crafted in Saharanpur.'
+    'Premium seasoned solid Sheesham wood carving, available for Pan-India dispatch.'
   );
-  const [initialProdImageUrl, setInitialProdImageUrl] = useState(
+  const [initialProdImageUrl] = useState(
     'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=800&q=80'
   );
 
-  // Step 4: Identity Verification Selection (Goal 3)
+  // Step 4: Identity Verification Selection (Pan-India KYC)
   const [verificationMethod, setVerificationMethod] =
     useState<IdentityVerificationMethod>('gstin_verified');
   const [gstNumber, setGstNumber] = useState('');
   const [tradeLicenseNumber, setTradeLicenseNumber] = useState('');
+  const [udyamNumber, setUdyamNumber] = useState('');
 
   // Step 5: Terms
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -172,8 +187,11 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
 
   const validateStep2 = () => {
     const errs: Record<string, string> = {};
-    if (!address.trim()) errs.address = 'Please enter complete shop physical address';
-    if (!pinCode || pinCode.length !== 6) errs.pinCode = 'Please enter valid 6-digit PIN code';
+    if (!address.trim()) errs.address = 'Please enter complete physical shop, workshop, or pickup address';
+    if (!stateName.trim()) errs.state = 'Please select your Indian State or UT';
+    if (!city.trim()) errs.city = 'Please enter your District / City name';
+    if (!locality.trim()) errs.locality = 'Please enter your market / area / town name';
+    if (!pinCode || !/^[1-9]\d{5}$/.test(pinCode)) errs.pinCode = 'Please enter a valid 6-digit Indian PIN code';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -185,6 +203,10 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
     if (hasInitialProduct) {
       if (!initialProdName.trim()) errs.prodName = 'Please enter initial product title';
       if (!initialProdPrice || initialProdPrice <= 0) errs.prodPrice = 'Please enter a valid price in ₹';
+      const prohibitedCheck = checkProhibitedProduct(initialProdName, initialProdDescription);
+      if (prohibitedCheck.blocked) {
+        errs.prodName = prohibitedCheck.message || 'This item is prohibited under MattoKart lawful trade policy.';
+      }
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -195,15 +217,37 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
     if (verificationMethod === 'gstin_verified') {
       const g = gstNumber.trim().toUpperCase();
       if (!g || !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(g)) {
-        errs.gstNumber = 'Valid 15-character GSTIN starting with 09 (Uttar Pradesh) is required.';
+        errs.gstNumber = 'Valid 15-character Indian GSTIN is required (e.g. 07AAACM1234F1Z5 or 09AABPN1234F1Z8).';
+      }
+    } else if (verificationMethod === 'udyam_msme') {
+      const u = udyamNumber.trim().toUpperCase();
+      if (!u || !/^UDYAM-[A-Z]{2}-\d{2}-\d{7}$/.test(u)) {
+        errs.udyamNumber = 'Enter valid Udyam Registration Number (e.g. UDYAM-UP-09-0012345).';
       }
     } else if (verificationMethod === 'trade_license') {
       if (!tradeLicenseNumber.trim()) {
-        errs.tradeLicense = 'Please enter your Saharanpur Municipal Trade License number.';
+        errs.tradeLicense = 'Please enter your Municipal Trade License or Shop Act registration number.';
       }
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
+  };
+
+  const handleSuggestNewCategory = () => {
+    if (!suggestedCatName.trim() || !onSuggestCategory) return;
+    onSuggestCategory({
+      suggestedName: suggestedCatName.trim(),
+      hindiName: suggestedCatHindi.trim() || undefined,
+      sampleSubcategories: suggestedCatSubs.trim() || suggestedCatName.trim(),
+      reason: suggestedCatReason.trim() || `Requested during seller onboarding (${city}, ${stateName})`,
+      suggestedByShopName: shopName.trim() || ownerName.trim() || 'Prospective India Seller',
+      sellerState: stateName,
+    });
+    setCategorySuggestionSent(true);
+    setSuggestedCatName('');
+    setSuggestedCatHindi('');
+    setSuggestedCatSubs('');
+    setSuggestedCatReason('');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -216,10 +260,12 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
     let refId = '';
     if (verificationMethod === 'gstin_verified') {
       refId = gstNumber.trim().toUpperCase();
+    } else if (verificationMethod === 'udyam_msme') {
+      refId = udyamNumber.trim().toUpperCase();
     } else if (verificationMethod === 'trade_license') {
       refId = tradeLicenseNumber.trim();
     } else if (verificationMethod === 'physical_inspection_saharanpur') {
-      refId = `VISIT-${locality.replace(/\s+/g, '-').toUpperCase()}-${Date.now().toString().slice(-4)}`;
+      refId = `VISIT-${city.replace(/\s+/g, '-').toUpperCase()}-${Date.now().toString().slice(-4)}`;
     } else {
       refId = `DL-SANDBOX-${Date.now()}`;
     }
@@ -229,11 +275,14 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
       id: sellerId,
       ownerName: ownerName.trim(),
       shopName: shopName.trim(),
+      sellerType,
       phone: `+91 ${phone.trim()}`,
       email: email.trim() || `${phone.trim()}@mattokart-seller.in`,
       address: address.trim(),
-      locality,
-      city,
+      locality: locality.trim(),
+      district: city.trim(),
+      city: city.trim(),
+      state: stateName,
       pinCode,
       landmark: landmark.trim(),
       categories: selectedCategories,
@@ -245,10 +294,11 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
       registrationFeeStatus: 'free_first_year', // Free first year: zero fee
       proposedFee: 0,
       description: description.trim(),
-      deliveryRadiusKm,
+      deliveryRadiusKm: shipsPanIndia ? 3000 : deliveryRadiusKm,
+      shipsPanIndia,
       bannerImage: 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=1200&q=80',
       shopLogo: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=200&q=80',
-      // Identity Verification (Goal 3)
+      // Identity Verification (All-India KYC)
       identityVerificationStatus: 'pending',
       identityVerificationMethod: verificationMethod,
       verificationReferenceId: refId,
@@ -277,13 +327,13 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
           <span>Join MattoKart — FREE for Your First Year</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 font-brand">
-          Register Your Shop on MattoKart
+          Sell Anywhere in India on MattoKart
         </h1>
         <p className="text-sm font-semibold text-emerald-700 max-w-xl mx-auto">
-          No registration fee. No listing fee during the first year.
+          Open to Individuals, Shopkeepers, Wholesalers, Manufacturers & Artisans — ₹0 First Year.
         </p>
         <p className="text-xs text-slate-600 max-w-xl mx-auto">
-          Expand your sales across Saharanpur & western Uttar Pradesh with ₹0 shop creation, ₹0 product listing, and zero commission buyer leads.
+          Register from any of India&apos;s 28 States & 8 UTs with ₹0 shop creation, ₹0 product listing, and Pan-India buyer discovery.
         </p>
 
         {/* Support Bar */}
@@ -295,7 +345,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2 shrink-0">
               <a
-                href="https://wa.me/918221077674?text=Namaste%20MattoKart!%20I%20need%20help%20registering%20my%20shop%20in%20Saharanpur."
+                href="https://wa.me/918221077674?text=Namaste%20MattoKart!%20I%20need%20help%20registering%20my%20seller%20account%20on%20MattoKart%20India."
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs transition-colors"
@@ -331,7 +381,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
               Namaste {submittedApplication.ownerName}!
             </h2>
             <p className="text-sm text-slate-600 max-w-lg mx-auto">
-              Your application for <strong className="text-slate-900">{submittedApplication.shopName}</strong> has been securely submitted to MattoKart's Saharanpur administration.
+              Your seller application for <strong className="text-slate-900">{submittedApplication.shopName}</strong> ({submittedApplication.city}, {submittedApplication.state}) has been securely submitted to MattoKart India Verification HQ.
             </p>
           </div>
 
@@ -436,15 +486,45 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Seller Account Type (Who Can Sell on MattoKart?) *
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {(
+                        [
+                          { id: 'shopkeeper', label: 'Local Shopkeeper' },
+                          { id: 'wholesaler', label: 'Wholesaler' },
+                          { id: 'manufacturer', label: 'Manufacturer' },
+                          { id: 'artisan', label: 'Artisan / Maker' },
+                          { id: 'individual', label: 'Individual Seller' },
+                        ] as { id: SellerType; label: string }[]
+                      ).map((st) => (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() => setSellerType(st.id)}
+                          className={`px-2.5 py-2 rounded-xl border text-[11px] font-bold transition-all cursor-pointer ${
+                            sellerType === st.id
+                              ? 'border-orange-500 bg-orange-50 text-orange-800 shadow-2xs'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Proprietor / Owner Full Name *
+                      Proprietor / Seller Full Name *
                     </label>
                     <input
                       type="text"
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
-                      placeholder="e.g. Rashid Ahmed Ansari"
+                      placeholder="e.g. Rajesh Verma / Priya Sharma"
                       className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                     />
                     {errors.ownerName && <p className="text-xs text-red-500 mt-1">{errors.ownerName}</p>}
@@ -452,13 +532,13 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Shop / Business Name *
+                      Shop / Brand / Storefront Name *
                     </label>
                     <input
                       type="text"
                       value={shopName}
                       onChange={(e) => setShopName(e.target.value)}
-                      placeholder="e.g. Noor Handicrafts & Timber Works"
+                      placeholder="e.g. Bharat Electronics Hub / Jaipur Looms"
                       className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                     />
                     {errors.shopName && <p className="text-xs text-red-500 mt-1">{errors.shopName}</p>}
@@ -572,28 +652,28 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
               </div>
             )}
 
-            {/* STEP 2: Location and Physical Address */}
+            {/* STEP 2: All-India Location and Shipping Coverage */}
             {step === 2 && (
               <div className="space-y-4 animate-in fade-in">
                 <div className="border-b border-slate-100 pb-3">
                   <h3 className="text-lg font-bold text-slate-900">
-                    Step 2: Shop Location in Saharanpur
+                    Step 2: Shop / Pickup Location Anywhere in India
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Accurate physical address helps buyers locate you and calculate delivery coverage.
+                    Available across all 28 Indian States & 8 Union Territories. Your PIN code powers accurate courier & shipping calculation.
                   </p>
                 </div>
 
                 <div className="space-y-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Shop / Factory / Godown Physical Address *
+                      Shop / Factory / Godown / Home Pickup Address *
                     </label>
                     <textarea
                       rows={2}
                       value={address}
                       onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Shop Number, Building Name, Street / Gali, Market..."
+                      placeholder="Shop Number, Building Name, Street / Market, Sector..."
                       className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-none"
                     />
                     {errors.address && <p className="text-xs text-red-500 mt-1">{errors.address}</p>}
@@ -602,47 +682,69 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Market / Locality *
+                        Indian State / UT *
                       </label>
                       <select
-                        value={locality}
+                        value={stateName}
                         onChange={(e) => {
-                          const chosen = e.target.value;
-                          setLocality(chosen);
-                          const matched = SAHARANPUR_LOCALITIES.find((l) => l.name === chosen);
-                          if (matched) setPinCode(matched.pinCode);
+                          const nextState = e.target.value;
+                          setStateName(nextState);
+                          const stObj = INDIAN_STATES_UTS.find((s) => s.name === nextState);
+                          if (stObj && stObj.majorDistricts.length > 0) {
+                            setCity(stObj.majorDistricts[0].name);
+                            setPinCode(stObj.majorDistricts[0].samplePin);
+                          }
                         }}
                         className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white"
                       >
-                        {SAHARANPUR_LOCALITIES.map((loc) => (
-                          <option key={loc.name} value={loc.name}>
-                            {loc.name}
+                        {INDIAN_STATES_UTS.map((st) => (
+                          <option key={st.name} value={st.name}>
+                            {st.name}
                           </option>
                         ))}
                       </select>
+                      {errors.state && <p className="text-xs text-red-500 mt-1">{errors.state}</p>}
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        City & State
+                        District / City *
                       </label>
                       <input
                         type="text"
-                        disabled
-                        value="Saharanpur, Uttar Pradesh"
-                        className="w-full px-3 py-2.5 text-sm bg-slate-100 border border-slate-200 rounded-xl text-slate-600 font-medium"
+                        list="seller-register-districts"
+                        value={city}
+                        onChange={(e) => setCity(e.target.value)}
+                        placeholder="e.g. Saharanpur, Delhi, Jaipur, Mumbai"
+                        className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white"
                       />
+                      <datalist id="seller-register-districts">
+                        {(INDIAN_STATES_UTS.find((s) => s.name === stateName)?.majorDistricts || []).map((d) => (
+                          <option key={d.name} value={d.name} />
+                        ))}
+                      </datalist>
+                      {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city}</p>}
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        PIN Code *
+                        6-Digit PIN Code *
                       </label>
                       <input
                         type="text"
                         maxLength={6}
                         value={pinCode}
-                        onChange={(e) => setPinCode(e.target.value.replace(/\D/g, ''))}
+                        onChange={(e) => {
+                          const clean = e.target.value.replace(/\D/g, '');
+                          setPinCode(clean);
+                          if (clean.length === 6) {
+                            const meta = resolveIndianPinMetadata(clean);
+                            if (meta.valid && meta.state !== 'India') {
+                              setStateName(meta.state);
+                            }
+                          }
+                        }}
+                        placeholder="e.g. 247001 / 110006"
                         className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl font-mono"
                       />
                       {errors.pinCode && <p className="text-xs text-red-500 mt-1">{errors.pinCode}</p>}
@@ -652,30 +754,89 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Market / Locality / Area *
+                      </label>
+                      <input
+                        type="text"
+                        list="seller-register-localities"
+                        value={locality}
+                        onChange={(e) => setLocality(e.target.value)}
+                        placeholder="e.g. Court Road, Lajpat Rai Market, Johari Bazar"
+                        className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl"
+                      />
+                      {city.toLowerCase().includes('saharanpur') && (
+                        <datalist id="seller-register-localities">
+                          {SAHARANPUR_LOCALITIES.map((loc) => (
+                            <option key={loc.name} value={loc.name} />
+                          ))}
+                        </datalist>
+                      )}
+                      {errors.locality && <p className="text-xs text-red-500 mt-1">{errors.locality}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
                         Nearby Landmark
                       </label>
                       <input
                         type="text"
                         value={landmark}
                         onChange={(e) => setLandmark(e.target.value)}
-                        placeholder="e.g. Near Ghanta Ghar, Court Road, Timber Market"
+                        placeholder="e.g. Main Market, Industrial Area, Railway Road"
                         className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl"
                       />
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Delivery Coverage Radius (km)
-                      </label>
-                      <input
-                        type="number"
-                        min={5}
-                        max={100}
-                        value={deliveryRadiusKm}
-                        onChange={(e) => setDeliveryRadiusKm(parseInt(e.target.value) || 20)}
-                        className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl font-mono"
-                      />
+                  {/* Shipping Coverage Toggle */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-slate-900 block">
+                          Where can you ship orders?
+                        </span>
+                        <span className="text-[11px] text-slate-500">
+                          Choose Pan-India Courier dispatch or Local/Regional delivery only (for heavy bulk goods).
+                        </span>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setShipsPanIndia(true)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer ${
+                            shipsPanIndia
+                              ? 'bg-orange-600 text-white border-orange-600'
+                              : 'bg-white text-slate-700 border-slate-300'
+                          }`}
+                        >
+                          Pan-India Shipping
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShipsPanIndia(false)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer ${
+                            !shipsPanIndia
+                              ? 'bg-slate-900 text-white border-slate-900'
+                              : 'bg-white text-slate-700 border-slate-300'
+                          }`}
+                        >
+                          Local / State Only
+                        </button>
+                      </div>
                     </div>
+                    {!shipsPanIndia && (
+                      <div className="flex items-center gap-3 text-xs pt-1">
+                        <span className="text-slate-600 font-semibold">Local Delivery Radius (km):</span>
+                        <input
+                          type="number"
+                          min={5}
+                          max={300}
+                          value={deliveryRadiusKm}
+                          onChange={(e) => setDeliveryRadiusKm(parseInt(e.target.value) || 30)}
+                          className="w-24 px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg font-mono bg-white"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -714,10 +875,20 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-2">
-                    Select Permitted Product Categories *
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Select Permitted Product Categories ({categories.length} Categories Open Across India) *
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowSuggestCategory(!showSuggestCategory)}
+                      className="text-xs font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Suggest New Category</span>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1">
                     {categories.map((cat) => {
                       const isSelected = selectedCategories.includes(cat.id);
                       return (
@@ -725,7 +896,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                           key={cat.id}
                           type="button"
                           onClick={() => handleCategoryToggle(cat.id)}
-                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                             isSelected
                               ? 'border-orange-500 bg-orange-50/50 text-slate-900 shadow-xs'
                               : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
@@ -738,6 +909,64 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                     })}
                   </div>
                   {errors.categories && <p className="text-xs text-red-500 mt-1">{errors.categories}</p>}
+
+                  {/* Suggest New Category Inline Drawer */}
+                  {showSuggestCategory && (
+                    <div className="mt-3 p-4 rounded-2xl bg-orange-50/60 border border-orange-200 space-y-2.5 text-xs">
+                      <div className="font-bold text-slate-900">
+                        Suggest a New Lawful Product Category for Admin Approval
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          value={suggestedCatName}
+                          onChange={(e) => setSuggestedCatName(e.target.value)}
+                          placeholder="Category Name (e.g. Solar & Clean Energy)"
+                          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                        <input
+                          type="text"
+                          value={suggestedCatHindi}
+                          onChange={(e) => setSuggestedCatHindi(e.target.value)}
+                          placeholder="Hindi Name (Optional)"
+                          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                        <input
+                          type="text"
+                          value={suggestedCatSubs}
+                          onChange={(e) => setSuggestedCatSubs(e.target.value)}
+                          placeholder="Sample Subcategories (comma separated)"
+                          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                        <input
+                          type="text"
+                          value={suggestedCatReason}
+                          onChange={(e) => setSuggestedCatReason(e.target.value)}
+                          placeholder="Brief reason / lawful product details"
+                          className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between pt-1">
+                        {categorySuggestionSent ? (
+                          <span className="text-emerald-700 font-bold">
+                            ✓ Suggestion sent to MattoKart Admin for review!
+                          </span>
+                        ) : (
+                          <span className="text-[11px] text-slate-500">
+                            Restricted/illegal goods are not permitted.
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleSuggestNewCategory}
+                          disabled={!suggestedCatName.trim()}
+                          className="px-4 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold rounded-lg cursor-pointer"
+                        >
+                          Submit Suggestion
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -860,15 +1089,15 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
               </div>
             )}
 
-            {/* STEP 4: Identity Verification Selection (Goal 3) */}
+            {/* STEP 4: Identity Verification Selection (All India KYC) */}
             {step === 4 && (
               <div className="space-y-4 animate-in fade-in">
                 <div className="border-b border-slate-100 pb-3">
                   <h3 className="text-lg font-bold text-slate-900">
-                    Step 4: Seller Identity Verification (Saharanpur KYC)
+                    Step 4: Seller Identity Verification (All-India KYC)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Verify your business identity. Protects consumers and gives your shop a verified local badge.
+                    Verify your individual or business identity across India. Protects buyers and unlocks verified seller trust badges.
                   </p>
                 </div>
 
@@ -878,7 +1107,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                   <div className="space-y-0.5 text-[11px] leading-relaxed">
                     <p className="font-bold text-blue-950">Statutory Aadhaar Compliance Notice</p>
                     <p className="text-blue-800">
-                      Under Section 29 of the Aadhaar Act and UIDAI guidelines, MattoKart <strong>never collects or stores raw 12-digit Aadhaar numbers or OTPs</strong>. Verification is processed via authorized DigiLocker KYC or official business credentials (GSTIN / Trade License / Saharanpur Shop Inspection).
+                      Under Section 29 of the Aadhaar Act and UIDAI guidelines, MattoKart <strong>never collects or stores raw 12-digit Aadhaar numbers or OTPs</strong>. Verification is processed via authorized DigiLocker KYC or recognized Indian credentials (Any State GSTIN / Udyam MSME / Municipal Trade License / Local Verification).
                     </p>
                   </div>
                 </div>
@@ -898,10 +1127,27 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                     >
                       <div className="flex items-center gap-2 font-bold text-xs text-slate-900 mb-1">
                         <FileCheck className="w-4 h-4 text-orange-600" />
-                        <span>GSTIN Verification (Instant)</span>
+                        <span>All-India GSTIN Verification</span>
                       </div>
                       <p className="text-[11px] text-slate-500 leading-tight">
-                        Uttar Pradesh GST number (09...). Verified against official tax jurisdiction.
+                        Valid 15-character GSTIN from any Indian State or UT (01–38). Instant format check.
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() => setVerificationMethod('udyam_msme')}
+                      className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
+                        verificationMethod === 'udyam_msme'
+                          ? 'border-orange-500 bg-orange-50/50'
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 font-bold text-xs text-slate-900 mb-1">
+                        <Sparkles className="w-4 h-4 text-orange-600" />
+                        <span>Udyam / MSME Registration</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-tight">
+                        Govt of India MSME Udyam certificate (ideal for small businesses, artisans & solo sellers).
                       </p>
                     </div>
 
@@ -915,27 +1161,10 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                     >
                       <div className="flex items-center gap-2 font-bold text-xs text-slate-900 mb-1">
                         <Building className="w-4 h-4 text-orange-600" />
-                        <span>Saharanpur Municipal License</span>
+                        <span>Municipal Trade License / Shop Act</span>
                       </div>
                       <p className="text-[11px] text-slate-500 leading-tight">
-                        Saharanpur Nagar Nigam Trade License or Shop Act registration.
-                      </p>
-                    </div>
-
-                    <div
-                      onClick={() => setVerificationMethod('physical_inspection_saharanpur')}
-                      className={`p-3.5 rounded-2xl border-2 transition-all cursor-pointer ${
-                        verificationMethod === 'physical_inspection_saharanpur'
-                          ? 'border-orange-500 bg-orange-50/50'
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 font-bold text-xs text-slate-900 mb-1">
-                        <MapPin className="w-4 h-4 text-orange-600" />
-                        <span>Physical Shop Inspection</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 leading-tight">
-                        MattoKart local field team visits your Saharanpur shop within 24-48 business hours.
+                        Local Municipal Corporation / Gumasta / Shop & Establishment license anywhere in India.
                       </p>
                     </div>
 
@@ -949,10 +1178,10 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                     >
                       <div className="flex items-center gap-2 font-bold text-xs text-slate-900 mb-1">
                         <ShieldCheck className="w-4 h-4 text-orange-600" />
-                        <span>DigiLocker Partner OAuth</span>
+                        <span>DigiLocker Individual / Business KYC</span>
                       </div>
                       <p className="text-[11px] text-slate-500 leading-tight">
-                        Authorized Government DigiLocker gateway redirect. Zero raw Aadhaar storage.
+                        Best for individuals & craftspeople without GST. Zero raw Aadhaar storage.
                       </p>
                     </div>
                   </div>
@@ -961,30 +1190,46 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                 {verificationMethod === 'gstin_verified' && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      15-Digit GSTIN Number (e.g. 09AABPN1234F1Z8) *
+                      15-Digit Indian GSTIN Number (Any State Code 01–38) *
                     </label>
                     <input
                       type="text"
                       maxLength={15}
                       value={gstNumber}
                       onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
-                      placeholder="09AABPN1234F1Z8"
+                      placeholder="e.g. 07AAACM1234F1Z5 or 09AABPN1234F1Z8"
                       className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl font-mono uppercase font-bold"
                     />
                     {errors.gstNumber && <p className="text-xs text-red-500 mt-1">{errors.gstNumber}</p>}
                   </div>
                 )}
 
+                {verificationMethod === 'udyam_msme' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Udyam Registration Number *
+                    </label>
+                    <input
+                      type="text"
+                      value={udyamNumber}
+                      onChange={(e) => setUdyamNumber(e.target.value.toUpperCase())}
+                      placeholder="e.g. UDYAM-RJ-17-0048219"
+                      className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl font-mono uppercase"
+                    />
+                    {errors.udyamNumber && <p className="text-xs text-red-500 mt-1">{errors.udyamNumber}</p>}
+                  </div>
+                )}
+
                 {verificationMethod === 'trade_license' && (
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Municipal Trade License / Shop Registration Number *
+                      Municipal Trade License / Shop Act Registration Number *
                     </label>
                     <input
                       type="text"
                       value={tradeLicenseNumber}
                       onChange={(e) => setTradeLicenseNumber(e.target.value)}
-                      placeholder="e.g. SMC-TL-2024-8841"
+                      placeholder="e.g. MCD-TL-2025-8841 or SMC-TL-2024-1102"
                       className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl font-mono"
                     />
                     {errors.tradeLicense && <p className="text-xs text-red-500 mt-1">{errors.tradeLicense}</p>}

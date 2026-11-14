@@ -20,6 +20,10 @@ import {
   DeliveryPartner,
   DeliverySettings,
   DeliveryType,
+  CategorySuggestion,
+  ShippingZone,
+  SellerSubOrder,
+  OrderTrackingEvent,
 } from './types';
 import {
   INITIAL_CATEGORIES,
@@ -32,6 +36,7 @@ import {
   INITIAL_REVIEWS,
   INITIAL_DELIVERY_PARTNERS,
   INITIAL_DELIVERY_SETTINGS,
+  INITIAL_CATEGORY_SUGGESTIONS,
 } from './data/mockData';
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -52,7 +57,7 @@ import { AdminDashboardView } from './views/AdminDashboardView';
 import { EnquiriesView } from './views/EnquiriesView';
 import { LegalView } from './views/LegalView';
 import { CartView } from './views/CartView';
-import { CheckoutView } from './views/CheckoutView';
+import { CheckoutView, PlaceOrderPayload } from './views/CheckoutView';
 import { OrdersView } from './views/OrdersView';
 import { WishlistView } from './views/WishlistView';
 import { isSupabaseConfigured } from './lib/supabaseClient';
@@ -70,6 +75,11 @@ import {
   createOrderInSupabase,
   getOrdersFromSupabase,
   updateOrderStatusInSupabase,
+  getAddressesFromSupabase,
+  saveAddressToSupabase,
+  deleteAddressFromSupabase,
+  getCartFromSupabase,
+  syncCartToSupabase,
 } from './lib/supabaseService';
 import { getStoredAuthUser, setStoredAuthUser, logoutUser } from './lib/authClient';
 
@@ -187,6 +197,9 @@ export default function App() {
   const [enquiries, setEnquiries] = useState<BuyerEnquiry[]>(() =>
     safeLoad('enquiries', INITIAL_ENQUIRIES)
   );
+  const [categorySuggestions, setCategorySuggestions] = useState<CategorySuggestion[]>(() =>
+    safeLoad('category_suggestions', INITIAL_CATEGORY_SUGGESTIONS)
+  );
 
   // Shopping Cart & Multi-vendor Orders State
   const [cart, setCart] = useState<CartItem[]>(() => safeLoad('cart', []));
@@ -300,6 +313,70 @@ export default function App() {
       isMounted = false;
     };
   }, []);
+
+  // Hydrate logged-in user's saved addresses and cloud cart from Supabase when logged in
+  useEffect(() => {
+    if (!currentUser?.id || !isSupabaseConfigured) return;
+    let active = true;
+
+    const hydrateCustomerCloudState = async () => {
+      try {
+        const [cloudAddresses, cloudCart] = await Promise.all([
+          getAddressesFromSupabase(currentUser.id),
+          getCartFromSupabase(currentUser.id),
+        ]);
+        if (!active) return;
+
+        if (cloudAddresses && cloudAddresses.length > 0) {
+          setSavedAddresses((prev) => {
+            const cloudIds = new Set(cloudAddresses.map((a) => a.id));
+            const localOnly = prev.filter((a) => !cloudIds.has(a.id));
+            const merged = [...cloudAddresses, ...localOnly];
+            safeSave('saved_addresses', merged);
+            return merged;
+          });
+        }
+
+        if (cloudCart && cloudCart.length > 0) {
+          setCart((prev) => {
+            if (prev.length === 0) {
+              safeSave('cart', cloudCart);
+              return cloudCart;
+            }
+            const mergedMap = new Map<string, CartItem>();
+            cloudCart.forEach((item) => mergedMap.set(item.productId, item));
+            prev.forEach((item) => {
+              const existing = mergedMap.get(item.productId);
+              if (existing) {
+                mergedMap.set(item.productId, {
+                  ...existing,
+                  quantity: Math.max(existing.quantity, item.quantity),
+                });
+              } else {
+                mergedMap.set(item.productId, item);
+              }
+            });
+            const merged = Array.from(mergedMap.values());
+            safeSave('cart', merged);
+            return merged;
+          });
+        }
+      } catch {
+        // Safe local fallback
+      }
+    };
+
+    hydrateCustomerCloudState();
+    return () => {
+      active = false;
+    };
+  }, [currentUser?.id]);
+
+  // Persist logged-in user's cart automatically to Supabase whenever cart changes
+  useEffect(() => {
+    if (!currentUser?.id || !isSupabaseConfigured) return;
+    syncCartToSupabase(cart, currentUser.id, currentUser.phone).catch(() => {});
+  }, [cart, currentUser?.id, currentUser?.phone]);
 
   // Toast feedback
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -540,25 +617,67 @@ export default function App() {
     addToast('info', 'Cart Cleared', 'Your shopping cart is now empty.');
   };
 
-  // Checkout & Order Placement with Dual Delivery support
-  const handlePlaceOrder = async (orderData: {
-    customerName: string;
-    customerPhone: string;
-    customerEmail?: string;
-    deliveryAddress: string;
-    locality: string;
-    city: string;
-    state: string;
-    pinCode: string;
-    paymentMethod: 'cod' | 'pay_on_delivery';
-    notes?: string;
-    deliveryType: DeliveryType;
-    deliveryFee: number;
-  }): Promise<Order | null> => {
+  // Saved Customer Address Book Handlers (Add, Edit, Delete, Default)
+  const handleSaveAddress = (addr: SavedAddress) => {
+    setSavedAddresses((prev) => {
+      const normalized = addr.isDefault
+        ? prev.map((a) => ({ ...a, isDefault: false }))
+        : [...prev];
+      const existingIdx = normalized.findIndex((a) => a.id === addr.id);
+      let updated: SavedAddress[];
+      if (existingIdx >= 0) {
+        updated = normalized.map((a) => (a.id === addr.id ? addr : a));
+      } else {
+        updated = [addr, ...normalized];
+      }
+      safeSave('saved_addresses', updated);
+      return updated;
+    });
+
+    if (isSupabaseConfigured && currentUser?.id) {
+      saveAddressToSupabase(addr, currentUser.id).catch(() => {});
+    }
+
+    addToast('success', 'Address Saved', `${addr.tag || 'Delivery'} address updated in your address book.`);
+  };
+
+  const handleDeleteAddress = (addressId: string) => {
+    setSavedAddresses((prev) => {
+      const updated = prev.filter((a) => a.id !== addressId);
+      safeSave('saved_addresses', updated);
+      return updated;
+    });
+
+    if (isSupabaseConfigured && currentUser?.id) {
+      deleteAddressFromSupabase(addressId).catch(() => {});
+    }
+
+    addToast('info', 'Address Deleted', 'Address removed from your saved addresses.');
+  };
+
+  // Checkout & Order Placement (Multi-Vendor + Heavy Goods + COD, Zero Fake Tracking)
+  const handlePlaceOrder = async (orderData: PlaceOrderPayload): Promise<Order | null> => {
     if (cart.length === 0) return null;
 
-    const itemsTotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-    const totalAmount = itemsTotal + (orderData.deliveryFee || 0);
+    // Final stock verification before order creation
+    const outOfStock = cart.find(
+      (item) =>
+        !item.product.inStock ||
+        item.product.stockCount <= 0 ||
+        item.quantity > item.product.stockCount
+    );
+    if (outOfStock) {
+      addToast(
+        'error',
+        'Insufficient Stock',
+        `Only ${outOfStock.product.stockCount} ${outOfStock.product.unit} left for ${outOfStock.product.name}. Please update your cart.`
+      );
+      return null;
+    }
+
+    const nowIso = new Date().toISOString();
+    const itemsTotal = orderData.subtotalAmount || cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
+    const totalAmount = itemsTotal + (orderData.deliveryFee || 0) + (orderData.codFee || 0);
     const orderId = `ord-${Date.now()}`;
     const orderNum = `MKT-${orderData.pinCode || '247001'}-${Math.floor(1000 + Math.random() * 9000)}`;
 
@@ -569,38 +688,74 @@ export default function App() {
       sellerId: item.product.sellerId,
       sellerShopName: item.product.sellerShopName,
       productName: item.product.name,
-      productImage: (item.product.images && item.product.images[0]) || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
+      productImage:
+        (item.product.images && item.product.images[0]) ||
+        'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80',
       unitPrice: item.product.price,
       quantity: item.quantity,
       unit: item.product.unit,
       totalPrice: item.product.price * item.quantity,
       itemStatus: 'pending',
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso,
     }));
+
+    const sellerOrders: SellerSubOrder[] | undefined = orderData.sellerOrders?.map((so, idx) => ({
+      ...so,
+      orderId,
+      subOrderNumber: `${orderNum}-S${idx + 1}`,
+      trackingNumber: undefined,
+      createdAt: nowIso,
+    }));
+
+    const initialTracking: OrderTrackingEvent[] = [
+      {
+        id: `trk-${Date.now()}`,
+        orderId,
+        status: 'placed',
+        title: 'Order Placed (Cash on Delivery)',
+        description:
+          orderData.initialTrackingNote ||
+          `Order #${orderNum} received for ${orderData.city}, ${orderData.state} (${orderData.pinCode}).`,
+        location: `${orderData.city}, ${orderData.state}`,
+        actorRole: 'customer',
+        createdAt: nowIso,
+      },
+    ];
 
     const newOrder: Order = {
       id: orderId,
       orderNumber: orderNum,
-      customerId: currentUser?.id || `cust-${orderData.customerPhone}`,
+      customerId: currentUser?.id || `cust-${orderData.customerPhone.replace(/\D/g, '')}`,
       customerName: orderData.customerName,
       customerPhone: orderData.customerPhone,
       customerEmail: orderData.customerEmail,
       deliveryAddress: orderData.deliveryAddress,
+      landmark: orderData.landmark,
       locality: orderData.locality,
+      district: orderData.district || orderData.city,
       city: orderData.city || 'Saharanpur',
       state: orderData.state || 'Uttar Pradesh',
       pinCode: orderData.pinCode,
+      subtotalAmount: itemsTotal,
+      codFee: orderData.codFee || 0,
       totalAmount,
       deliveryType: orderData.deliveryType || 'seller_delivery',
       deliveryFee: orderData.deliveryFee || 0,
-      deliveryStatus: orderData.deliveryType === 'mattokart_delivery' ? 'requested' : 'assigned',
+      deliveryStatus: orderData.deliveryType === 'mattokart_delivery' ? 'requested' : 'pending',
+      shippingZone: orderData.shippingZone,
+      courierPartner: orderData.courierPartner,
+      estimatedDeliveryWindow: orderData.estimatedDeliveryWindow,
+      // Strictly no fake AWB/tracking number on order creation
+      trackingNumber: undefined,
       paymentMethod: orderData.paymentMethod,
       paymentStatus: 'pending',
       orderStatus: 'placed',
       notes: orderData.notes,
       items: orderItems,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      sellerOrders,
+      trackingEvents: initialTracking,
+      createdAt: nowIso,
+      updatedAt: nowIso,
     };
 
     // Sync to Express Backend
@@ -621,7 +776,23 @@ export default function App() {
       });
     }
 
-    // Update local state and clear cart
+    // Decrement product inventory safely
+    const orderedQtyByProduct = new Map<string, number>();
+    cart.forEach((ci) => {
+      orderedQtyByProduct.set(ci.product.id, (orderedQtyByProduct.get(ci.product.id) || 0) + ci.quantity);
+    });
+    setProducts((prev) => {
+      const updated = prev.map((p) => {
+        const bought = orderedQtyByProduct.get(p.id);
+        if (!bought) return p;
+        const nextStock = Math.max(0, p.stockCount - bought);
+        return { ...p, stockCount: nextStock, inStock: nextStock > 0 };
+      });
+      safeSave('products', updated);
+      return updated;
+    });
+
+    // Update orders state and clear cart
     setOrders((prev) => {
       const updated = [newOrder, ...prev];
       safeSave('orders', updated);
@@ -633,7 +804,7 @@ export default function App() {
     addToast(
       'success',
       'Order Placed Successfully!',
-      `Order #${newOrder.orderNumber} placed. Delivery in Saharanpur with Cash on Delivery.`
+      `Order #${newOrder.orderNumber} placed for ${newOrder.city}, ${newOrder.state} (Cash on Delivery).`
     );
 
     return newOrder;
@@ -644,8 +815,14 @@ export default function App() {
     const targetOrder = orders.find((o) => o.id === orderId);
     if (!targetOrder) return false;
 
-    if (targetOrder.orderStatus !== 'placed' && targetOrder.orderStatus !== 'confirmed') {
-      addToast('error', 'Cannot Cancel Order', 'This order is already being processed or is out for delivery. Please contact the seller directly.');
+    if (
+      targetOrder.orderStatus === 'packed' ||
+      targetOrder.orderStatus === 'shipped' ||
+      targetOrder.orderStatus === 'out_for_delivery' ||
+      targetOrder.orderStatus === 'delivered' ||
+      targetOrder.orderStatus === 'refunded'
+    ) {
+      addToast('error', 'Cannot Cancel Order', 'This order is already packed or dispatched. Please contact support.');
       return false;
     }
 
@@ -663,15 +840,33 @@ export default function App() {
       updateOrderStatusInSupabase(orderId, 'cancelled', reason).catch(() => {});
     }
 
+    const nowIso = new Date().toISOString();
     setOrders((prev) => {
       const updated = prev.map((o) =>
         o.id === orderId
           ? {
               ...o,
               orderStatus: 'cancelled' as OrderStatus,
-              updatedAt: new Date().toISOString(),
+              updatedAt: nowIso,
               notes: o.notes ? `${o.notes} | Cancelled: ${reason}` : `Cancelled: ${reason}`,
               items: o.items.map((item) => ({ ...item, itemStatus: 'cancelled' as const })),
+              sellerOrders: o.sellerOrders?.map((so) => ({
+                ...so,
+                orderStatus: 'cancelled' as OrderStatus,
+                deliveryStatus: 'cancelled' as const,
+              })),
+              trackingEvents: [
+                ...(o.trackingEvents || []),
+                {
+                  id: `trk-${Date.now()}`,
+                  orderId: o.id,
+                  status: 'cancelled' as OrderStatus,
+                  title: 'Order Cancelled',
+                  description: reason,
+                  actorRole: 'customer' as const,
+                  createdAt: nowIso,
+                },
+              ],
             }
           : o
       );
@@ -683,17 +878,82 @@ export default function App() {
     return true;
   };
 
-  // Order Status Update by Seller or Admin
+  // Customer Return Request on Delivered Order
+  const handleRequestReturn = async (orderId: string, reason: string): Promise<boolean> => {
+    const targetOrder = orders.find((o) => o.id === orderId);
+    if (!targetOrder || targetOrder.orderStatus !== 'delivered') {
+      addToast('error', 'Return Unavailable', 'Returns can only be requested on delivered orders.');
+      return false;
+    }
+
+    try {
+      await fetch(`/api/orders/${orderId}/return`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      });
+    } catch (err) {
+      console.warn('[Server] Return order warning:', err);
+    }
+
+    if (isSupabaseConfigured) {
+      updateOrderStatusInSupabase(orderId, 'return_requested', reason).catch(() => {});
+    }
+
+    const nowIso = new Date().toISOString();
+    setOrders((prev) => {
+      const updated = prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              orderStatus: 'return_requested' as OrderStatus,
+              updatedAt: nowIso,
+              notes: o.notes ? `${o.notes} | Return Requested: ${reason}` : `Return Requested: ${reason}`,
+              sellerOrders: o.sellerOrders?.map((so) => ({
+                ...so,
+                orderStatus: 'return_requested' as OrderStatus,
+              })),
+              trackingEvents: [
+                ...(o.trackingEvents || []),
+                {
+                  id: `trk-${Date.now()}`,
+                  orderId: o.id,
+                  status: 'return_requested' as OrderStatus,
+                  title: 'Return Requested by Customer',
+                  description: reason,
+                  actorRole: 'customer' as const,
+                  createdAt: nowIso,
+                },
+              ],
+            }
+          : o
+      );
+      safeSave('orders', updated);
+      return updated;
+    });
+
+    addToast('success', 'Return Request Submitted', `Return ticket created for #${targetOrder.orderNumber}.`);
+    return true;
+  };
+
+  // Order Status Update by Seller or Admin (Full 10-Stage Lifecycle)
   const handleUpdateOrderStatus = async (
     orderId: string,
     newStatus: OrderStatus,
-    notes?: string
+    notes?: string,
+    extras?: { sellerId?: string; courierName?: string; trackingNumber?: string }
   ): Promise<boolean> => {
     try {
       await fetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, notes }),
+        body: JSON.stringify({
+          status: newStatus,
+          notes,
+          sellerId: extras?.sellerId,
+          courierName: extras?.courierName,
+          trackingNumber: extras?.trackingNumber,
+        }),
       });
     } catch (err) {
       console.warn('[Server] Update order status warning:', err);
@@ -704,34 +964,88 @@ export default function App() {
     }
 
     const titles: Record<OrderStatus, string> = {
-      placed: 'Order Placed (ऑर्डर दर्ज हुआ)',
-      confirmed: 'Order Confirmed by Seller (ऑर्डर स्वीकार हुआ)',
-      processing: 'Processing in Shop (तैयार किया जा रहा है)',
-      out_for_delivery: 'Out for Delivery (डिलीवरी के लिए निकला)',
-      delivered: 'Delivered & COD Collected (डिलीवर हो गया)',
-      cancelled: 'Order Cancelled (ऑर्डर रद्द हुआ)',
+      placed: 'Order Placed',
+      payment_confirmed: 'Payment Confirmed',
+      confirmed: 'Order Confirmed',
+      processing: 'Processing Order',
+      packed: 'Packed & Ready',
+      shipped: 'Shipped / Dispatched',
+      out_for_delivery: 'Out for Delivery',
+      delivered: 'Delivered & COD Collected',
+      cancelled: 'Order Cancelled',
+      return_requested: 'Return Requested',
+      refunded: 'Refund Processed',
     };
 
+    const nowIso = new Date().toISOString();
     setOrders((prev) => {
       const updated = prev.map((o) => {
         if (o.id !== orderId) return o;
+        const nextSellerOrders = o.sellerOrders?.map((so) => {
+          if (extras?.sellerId && so.sellerId !== extras.sellerId) return so;
+          return {
+            ...so,
+            orderStatus: newStatus,
+            courierName: extras?.courierName || so.courierName,
+            trackingNumber: extras?.trackingNumber || so.trackingNumber,
+            deliveryStatus:
+              newStatus === 'delivered'
+                ? ('delivered' as const)
+                : newStatus === 'out_for_delivery'
+                ? ('out_for_delivery' as const)
+                : newStatus === 'shipped'
+                ? ('picked_up' as const)
+                : newStatus === 'cancelled'
+                ? ('cancelled' as const)
+                : so.deliveryStatus,
+          };
+        });
+
+        const nextEvent: OrderTrackingEvent = {
+          id: `trk-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          orderId: o.id,
+          status: newStatus,
+          title: titles[newStatus] || newStatus,
+          description:
+            notes ||
+            (extras?.trackingNumber ? `Tracking / LR #: ${extras.trackingNumber}` : undefined),
+          location: `${o.city}, ${o.state}`,
+          actorRole: extras?.sellerId ? 'seller' : 'admin',
+          createdAt: nowIso,
+        };
+
         return {
           ...o,
           orderStatus: newStatus,
-          paymentStatus: newStatus === 'delivered' ? 'completed' : o.paymentStatus,
-          updatedAt: new Date().toISOString(),
-          notes: notes ? `${o.notes || ''} | ${notes}`.trim() : o.notes,
-          items: o.items.map((item) => ({
-            ...item,
-            itemStatus:
-              newStatus === 'cancelled'
+          courierPartner: extras?.courierName || o.courierPartner,
+          trackingNumber: extras?.trackingNumber || o.trackingNumber,
+          paymentStatus:
+            newStatus === 'delivered'
+              ? ('completed' as const)
+              : newStatus === 'refunded'
+              ? ('refunded' as const)
+              : o.paymentStatus,
+          updatedAt: nowIso,
+          notes: notes ? `${o.notes ? o.notes + ' | ' : ''}${notes}`.trim() : o.notes,
+          sellerOrders: nextSellerOrders,
+          trackingEvents: [...(o.trackingEvents || []), nextEvent],
+          items: o.items.map((item): OrderItem => {
+            if (extras?.sellerId && item.sellerId !== extras.sellerId) return item;
+            const nextItemStatus: OrderItem['itemStatus'] =
+              newStatus === 'cancelled' || newStatus === 'refunded'
                 ? 'cancelled'
                 : newStatus === 'delivered'
                 ? 'delivered'
-                : newStatus === 'out_for_delivery'
+                : newStatus === 'shipped' || newStatus === 'out_for_delivery'
                 ? 'shipped'
-                : item.itemStatus,
-          })),
+                : newStatus === 'packed'
+                ? 'ready_for_pickup'
+                : 'confirmed';
+            return {
+              ...item,
+              itemStatus: nextItemStatus,
+            };
+          }),
         };
       });
       safeSave('orders', updated);
@@ -779,11 +1093,14 @@ export default function App() {
 
     // If initial sample product was uploaded, stage it as pending review
     if (newSeller.initialProduct) {
+      const sellerCity = newSeller.city || 'Saharanpur';
+      const sellerState = newSeller.state || 'Uttar Pradesh';
+      const shippingScope = newSeller.shipsPanIndia !== false ? 'pan_india' : 'local_only';
       const sampleProd: Product = {
         id: crypto.randomUUID ? crypto.randomUUID() : `prod-${Date.now()}`,
         name: newSeller.initialProduct.name,
         categoryId: newSeller.categories[0] || 'furniture',
-        subcategory: 'Artisan Special',
+        subcategory: 'Marketplace Listing',
         price: newSeller.initialProduct.price,
         unit: newSeller.initialProduct.unit,
         minOrderQuantity: 1,
@@ -792,16 +1109,20 @@ export default function App() {
         images: [newSeller.initialProduct.imageUrl || 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=800&q=80'],
         description: newSeller.initialProduct.description,
         specifications: {
-          'Origin': 'Saharanpur, UP',
-          'Supplier': newSeller.shopName,
+          Origin: `${sellerCity}, ${sellerState}`,
+          Supplier: newSeller.shopName,
         },
         sellerId: newSeller.id,
         sellerName: newSeller.ownerName,
         sellerShopName: newSeller.shopName,
         sellerLocality: newSeller.locality,
+        sellerCity,
+        sellerState,
+        sellerPinCode: newSeller.pinCode,
         sellerPhone: newSeller.phone,
         sellerRating: 5.0,
-        deliveryAreas: ['Saharanpur Local'],
+        shippingScope,
+        deliveryAreas: shippingScope === 'pan_india' ? ['All India'] : [`${sellerCity} Local`],
         status: 'pending', // Staged pending seller approval
         createdAt: new Date().toISOString().split('T')[0],
       };
@@ -820,7 +1141,7 @@ export default function App() {
     addToast(
       'success',
       'Shop Registration Received',
-      `Application ID: ${newSeller.id}. Pending review by MattoKart Saharanpur administration.`
+      `Application ID: ${newSeller.id}. Pending review by MattoKart verification team.`
     );
   };
 
@@ -1016,6 +1337,85 @@ export default function App() {
     addToast('success', 'Category Created', `${newCat.name} added to permitted catalog.`);
   };
 
+  const handleSuggestCategory = (suggestion: Omit<CategorySuggestion, 'id' | 'status' | 'createdAt'>) => {
+    const newSuggestion: CategorySuggestion = {
+      ...suggestion,
+      id: `catsug-${Date.now()}`,
+      status: 'pending',
+      createdAt: new Date().toISOString().split('T')[0],
+    };
+    setCategorySuggestions((prev) => {
+      const updated = [newSuggestion, ...prev];
+      safeSave('category_suggestions', updated);
+      return updated;
+    });
+    addToast(
+      'success',
+      'Category Suggestion Sent',
+      `"${suggestion.suggestedName}" has been submitted for MattoKart admin review.`
+    );
+  };
+
+  const handleApproveCategorySuggestion = (suggestionId: string) => {
+    const suggestion = categorySuggestions.find((s) => s.id === suggestionId);
+    if (!suggestion) return;
+
+    const baseSlug =
+      suggestion.suggestedName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '') || `custom_${Date.now()}`;
+    const uniqueSlug = categories.some((c) => c.id === baseSlug)
+      ? `${baseSlug}_${Math.floor(100 + Math.random() * 900)}`
+      : baseSlug;
+
+    const parsedSubs = (suggestion.sampleSubcategories || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const createdCategory: Category = {
+      id: uniqueSlug as CategoryId,
+      name: suggestion.suggestedName,
+      hindiName: suggestion.hindiName || suggestion.suggestedName,
+      description: suggestion.reason || `${suggestion.suggestedName} products from verified Indian sellers.`,
+      iconName: 'Package',
+      itemCount: 0,
+      subcategories: parsedSubs.length > 0 ? parsedSubs : [suggestion.suggestedName],
+    };
+
+    setCategories((prev) => {
+      const updated = [...prev, createdCategory];
+      safeSave('categories', updated);
+      return updated;
+    });
+
+    setCategorySuggestions((prev) => {
+      const updated = prev.map((s) =>
+        s.id === suggestionId ? { ...s, status: 'approved' as const } : s
+      );
+      safeSave('category_suggestions', updated);
+      return updated;
+    });
+
+    addToast(
+      'success',
+      'Suggested Category Approved',
+      `"${suggestion.suggestedName}" is now live across Pan-India MattoKart.`
+    );
+  };
+
+  const handleRejectCategorySuggestion = (suggestionId: string) => {
+    setCategorySuggestions((prev) => {
+      const updated = prev.map((s) =>
+        s.id === suggestionId ? { ...s, status: 'rejected' as const } : s
+      );
+      safeSave('category_suggestions', updated);
+      return updated;
+    });
+    addToast('info', 'Suggestion Declined', 'Category request marked as rejected.');
+  };
+
   const handleUpdateSellerFeeStatus = (sellerId: string, status: Seller['registrationFeeStatus']) => {
     setSellers((prev) => {
       const updated = prev.map((s) => (s.id === sellerId ? { ...s, registrationFeeStatus: status } : s));
@@ -1068,6 +1468,7 @@ export default function App() {
                 setCatalogCategory('all');
                 handleSetActiveTab('catalog');
               }}
+              onGoToShops={() => handleSetActiveTab('shops')}
               onGoToSellerRegister={() => handleSetActiveTab('seller-register')}
               onOpenLocationModal={() => setIsLocationModalOpen(true)}
               onSelectShopProducts={handleSelectShopProducts}
@@ -1109,12 +1510,16 @@ export default function App() {
           {activeTab === 'cart' && (
             <CartView
               cart={cart}
+              selectedLocality={selectedLocality}
+              currentUser={currentUser}
               onUpdateQuantity={handleUpdateCartQuantity}
               onRemoveItem={handleRemoveCartItem}
               onClearCart={handleClearCart}
               onProceedToCheckout={() => handleSetActiveTab('checkout')}
               onGoToCatalog={() => handleSetActiveTab('catalog')}
               onViewProductDetails={handleViewProductDetail}
+              onOpenLocationModal={() => setIsLocationModalOpen(true)}
+              onOpenAuthModal={() => handleOpenAuthModal('customer')}
             />
           )}
 
@@ -1124,6 +1529,8 @@ export default function App() {
               currentUser={currentUser}
               selectedLocality={selectedLocality}
               savedAddresses={savedAddresses}
+              onSaveAddress={handleSaveAddress}
+              onDeleteAddress={handleDeleteAddress}
               onPlaceOrder={handlePlaceOrder}
               onGoBackToCart={() => handleSetActiveTab('cart')}
               onGoToOrders={() => handleSetActiveTab('orders')}
@@ -1145,6 +1552,7 @@ export default function App() {
                   : orders
               }
               onCancelOrder={handleCancelOrder}
+              onRequestReturn={handleRequestReturn}
               onBuyAgain={(item) => {
                 const matched = products.find((p) => p.id === item.productId);
                 if (matched) {
@@ -1201,12 +1609,17 @@ export default function App() {
               categories={categories}
               onRegisterSeller={handleRegisterSeller}
               onGoToDashboard={() => handleSetActiveTab('seller-dashboard')}
+              currentUser={currentUser}
+              onOpenAuthModal={() => handleOpenAuthModal('seller')}
+              onSuggestCategory={handleSuggestCategory}
             />
           )}
 
           {activeTab === 'seller-dashboard' && (
             <SellerDashboardView
               currentSeller={currentSeller}
+              allSellers={sellers}
+              onSelectSeller={setCurrentSellerId}
               products={products}
               enquiries={enquiries}
               categories={categories}
@@ -1216,6 +1629,7 @@ export default function App() {
               onDeleteProduct={handleDeleteProduct}
               onUpdateSeller={handleUpdateSeller}
               onUpdateOrderStatus={handleUpdateOrderStatus}
+              onSuggestCategory={handleSuggestCategory}
             />
           )}
 
@@ -1227,12 +1641,15 @@ export default function App() {
               enquiries={enquiries}
               orders={orders}
               deliveryPartners={deliveryPartners}
+              categorySuggestions={categorySuggestions}
               onApproveSeller={handleApproveSeller}
               onRejectSeller={handleRejectSeller}
               onToggleSuspendSeller={handleToggleSuspendSeller}
               onApproveProduct={handleApproveProduct}
               onRejectProduct={handleRejectProduct}
               onAddCategory={handleAddCategory}
+              onApproveCategorySuggestion={handleApproveCategorySuggestion}
+              onRejectCategorySuggestion={handleRejectCategorySuggestion}
               onUpdateSellerFeeStatus={handleUpdateSellerFeeStatus}
               onAdminUpdateOrderStatus={handleUpdateOrderStatus}
               onAssignDeliveryPartner={handleAssignDeliveryPartner}
@@ -1273,6 +1690,7 @@ export default function App() {
         selectedLocality={selectedLocality}
         onSelectLocality={(loc) => {
           setSelectedLocality(loc);
+          safeSave('locality', loc);
           addToast('info', 'Location Updated', `Delivery location set to ${loc.name} (${loc.pinCode})`);
         }}
       />
@@ -1293,6 +1711,8 @@ export default function App() {
             p.categoryId === selectedProductForDetail?.categoryId &&
             p.id !== selectedProductForDetail?.id
         )}
+        allProducts={products}
+        selectedLocality={selectedLocality}
         onSelectProduct={handleViewProductDetail}
       />
 
@@ -1303,6 +1723,14 @@ export default function App() {
         onClose={() => setSelectedProductForEnquiry(null)}
         onSubmitEnquiry={handleSubmitEnquiry}
         currentLocality={selectedLocality}
+      />
+
+      {/* Indian Mobile OTP Login / Register Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={handleAuthSuccess}
+        initialRole={authModalRole}
       />
     </div>
   );

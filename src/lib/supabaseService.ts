@@ -11,6 +11,10 @@ import {
   DeliverySettings,
   DeliveryStatus,
   DeliveryType,
+  CartItem,
+  SavedAddress,
+  SellerSubOrder,
+  OrderTrackingEvent,
 } from '../types';
 
 /**
@@ -73,12 +77,30 @@ export async function getProductsFromSupabase(): Promise<Product[] | null> {
       description: p.description || '',
       specifications: p.specifications || {},
       sellerId: p.seller_id,
-      sellerName: p.sellers?.owner_name || 'Saharanpur Merchant',
-      sellerShopName: p.sellers?.shop_name || 'Local Shop',
-      sellerLocality: p.sellers?.locality || 'Saharanpur',
+      sellerName: p.sellers?.owner_name || 'Verified Seller',
+      sellerShopName: p.sellers?.shop_name || 'MattoKart Store',
+      sellerLocality: p.sellers?.locality || 'India',
+      sellerCity: p.seller_city || p.sellers?.city || 'Saharanpur',
+      sellerState: p.seller_state || p.sellers?.state || 'Uttar Pradesh',
+      sellerPinCode: p.seller_pin_code || p.sellers?.pin_code || '247001',
       sellerPhone: p.sellers?.phone || '+91 8221077674',
       sellerRating: p.sellers?.rating ? Number(p.sellers.rating) : 4.9,
       deliveryAreas: p.delivery_areas || [],
+      shippingScope: p.shipping_scope || undefined,
+      condition: p.condition || undefined,
+      estimatedWeightKg: p.estimated_weight_kg ? Number(p.estimated_weight_kg) : undefined,
+      dimensionsCm:
+        p.length_cm || p.breadth_cm || p.height_cm
+          ? {
+              length: Number(p.length_cm || 0),
+              breadth: Number(p.breadth_cm || 0),
+              height: Number(p.height_cm || 0),
+            }
+          : undefined,
+      deliveryMode: p.delivery_mode || undefined,
+      sellerDeliveryFee: typeof p.seller_delivery_fee === 'number' ? Number(p.seller_delivery_fee) : undefined,
+      localDeliveryAvailable: typeof p.local_delivery_available === 'boolean' ? p.local_delivery_available : undefined,
+      codAvailable: typeof p.cod_available === 'boolean' ? p.cod_available : undefined,
       featured: p.featured,
       isWoodcraftSpecial: p.is_woodcraft_special,
       status: p.status,
@@ -100,15 +122,18 @@ export async function getSellersFromSupabase(): Promise<Seller[] | null> {
       .eq('status', 'active');
 
     if (error || !data) return null;
-    return data.map((s) => ({
+    return data.map((s: any) => ({
       id: s.id,
       ownerName: s.owner_name,
       shopName: s.shop_name,
+      sellerType: s.seller_type || undefined,
       phone: s.phone,
       email: s.email,
       address: s.address,
       locality: s.locality,
+      district: s.district || s.city,
       city: s.city,
+      state: s.state || 'Uttar Pradesh',
       pinCode: s.pin_code,
       landmark: s.landmark || undefined,
       categories: s.categories as any,
@@ -123,6 +148,7 @@ export async function getSellersFromSupabase(): Promise<Seller[] | null> {
       shopLogo: s.shop_logo || undefined,
       description: s.description || '',
       deliveryRadiusKm: s.delivery_radius_km,
+      shipsPanIndia: typeof s.ships_pan_india === 'boolean' ? s.ships_pan_india : undefined,
       identityVerificationStatus: s.identity_verification_status || 'not_started',
       identityVerificationMethod: s.identity_verification_method as any,
       verificationReferenceId: s.verification_reference_id || undefined,
@@ -360,7 +386,7 @@ export async function updateSellerStatusInSupabase(
   }
 }
 
-// 11. Create Order in Supabase
+// 11. Create Order in Supabase (with Multi-Vendor seller_orders & shipment_tracking)
 export async function createOrderInSupabase(
   order: Order
 ): Promise<{ success: boolean; id?: string; error?: string }> {
@@ -368,6 +394,17 @@ export async function createOrderInSupabase(
     return { success: false, error: 'Supabase is not configured' };
   }
   try {
+    const panIndiaMeta = [
+      order.city && order.state ? `Destination: ${order.city}, ${order.state}` : '',
+      order.shippingZone ? `Zone: ${order.shippingZone}` : '',
+      order.courierPartner ? `Courier: ${order.courierPartner}` : '',
+      order.estimatedDeliveryWindow ? `ETA: ${order.estimatedDeliveryWindow}` : '',
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+    const combinedDeliveryNotes = [order.deliveryNotes, panIndiaMeta].filter(Boolean).join(' — ');
+
     const orderPayload: any = {
       order_number: order.orderNumber,
       customer_name: order.customerName,
@@ -380,10 +417,13 @@ export async function createOrderInSupabase(
       payment_method: order.paymentMethod || 'cod',
       payment_status: order.paymentStatus || 'pending',
       order_status: order.orderStatus || 'placed',
-      delivery_type: order.deliveryType || 'seller_delivery',
+      delivery_type:
+        order.deliveryType === 'interstate_courier' || order.deliveryType === 'seller_transport'
+          ? 'seller_delivery'
+          : order.deliveryType || 'seller_delivery',
       delivery_fee: order.deliveryFee || 0,
       delivery_status: order.deliveryStatus || 'pending',
-      delivery_notes: order.deliveryNotes || null,
+      delivery_notes: combinedDeliveryNotes || null,
       notes: order.notes || null,
     };
 
@@ -432,6 +472,52 @@ export async function createOrderInSupabase(
       }
     }
 
+    // Best-effort insert into seller_orders & shipment_tracking (Stage B migration tables)
+    if (order.sellerOrders && order.sellerOrders.length > 0) {
+      try {
+        const subPayloads = order.sellerOrders
+          .filter((so) => isValidUuid(so.sellerId))
+          .map((so) => ({
+            order_id: orderRow.id,
+            sub_order_number: so.subOrderNumber,
+            seller_id: so.sellerId,
+            seller_shop_name: so.sellerShopName,
+            subtotal: so.subtotal,
+            shipping_fee: so.shippingFee,
+            cod_fee: so.codFee,
+            total_amount: so.totalAmount,
+            delivery_mode: so.deliveryMode,
+            delivery_status: so.deliveryStatus,
+            order_status: so.orderStatus,
+            courier_name: so.courierName || null,
+            tracking_number: so.trackingNumber || null,
+            estimated_delivery: so.estimatedDelivery || null,
+          }));
+
+        if (subPayloads.length > 0) {
+          await supabase.from('seller_orders').insert(subPayloads);
+        }
+      } catch {
+        // Safe fallback if Stage B SQL migration has not yet been applied
+      }
+    }
+
+    if (order.trackingEvents && order.trackingEvents.length > 0) {
+      try {
+        const trackingPayloads = order.trackingEvents.map((ev) => ({
+          order_id: orderRow.id,
+          status: ev.status,
+          title: ev.title,
+          description: ev.description || null,
+          location: ev.location || null,
+          actor_role: ev.actorRole || 'system',
+        }));
+        await supabase.from('shipment_tracking').insert(trackingPayloads);
+      } catch {
+        // Safe fallback if Stage B SQL migration has not yet been applied
+      }
+    }
+
     return { success: true, id: orderRow.id };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -463,8 +549,8 @@ export async function getOrdersFromSupabase(
       customerEmail: o.customer_email || undefined,
       deliveryAddress: o.delivery_address,
       locality: o.locality,
-      city: 'Saharanpur',
-      state: 'Uttar Pradesh',
+      city: o.city || 'Saharanpur',
+      state: o.state || 'Uttar Pradesh',
       pinCode: o.pin_code,
       totalAmount: Number(o.total_amount),
       paymentMethod: o.payment_method as any,
@@ -684,4 +770,151 @@ export async function updateDeliveryStatusInSupabase(
     return { success: false, error: err.message };
   }
 }
+
+// 17. Customer Address Book Sync (Stage B)
+export async function getAddressesFromSupabase(userId?: string): Promise<SavedAddress[] | null> {
+  if (!supabase || !isSupabaseConfigured || !userId || !isValidUuid(userId)) return null;
+  try {
+    const { data, error } = await supabase
+      .from('customer_addresses')
+      .select('*')
+      .eq('user_id', userId)
+      .order('is_default', { ascending: false });
+    if (error || !data) return null;
+    return data.map((a: any) => ({
+      id: a.id,
+      fullName: a.full_name,
+      phone: a.phone,
+      email: a.email || undefined,
+      addressLine: a.address_line,
+      landmark: a.landmark || undefined,
+      locality: a.locality,
+      district: a.district || undefined,
+      city: a.city,
+      state: a.state,
+      pinCode: a.pin_code,
+      isDefault: Boolean(a.is_default),
+      tag: a.tag || 'Home',
+    }));
+  } catch {
+    return null;
+  }
+}
+
+export async function saveAddressToSupabase(
+  address: SavedAddress,
+  userId?: string
+): Promise<{ success: boolean; id?: string }> {
+  if (!supabase || !isSupabaseConfigured || !userId || !isValidUuid(userId)) {
+    return { success: false };
+  }
+  try {
+    const payload: any = {
+      user_id: userId,
+      customer_phone: address.phone,
+      full_name: address.fullName,
+      phone: address.phone,
+      email: address.email || null,
+      address_line: address.addressLine,
+      landmark: address.landmark || null,
+      locality: address.locality,
+      district: address.district || address.city,
+      city: address.city,
+      state: address.state,
+      pin_code: address.pinCode,
+      tag: address.tag || 'Home',
+      is_default: Boolean(address.isDefault),
+      updated_at: new Date().toISOString(),
+    };
+    if (isValidUuid(address.id)) {
+      payload.id = address.id;
+    }
+    const { data, error } = await supabase
+      .from('customer_addresses')
+      .upsert(payload)
+      .select()
+      .single();
+    if (error) return { success: false };
+    return { success: true, id: data?.id };
+  } catch {
+    return { success: false };
+  }
+}
+
+export async function deleteAddressFromSupabase(addressId: string): Promise<boolean> {
+  if (!supabase || !isSupabaseConfigured || !isValidUuid(addressId)) return false;
+  try {
+    const { error } = await supabase.from('customer_addresses').delete().eq('id', addressId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// 18. Logged-in Customer Persistent Cart Sync (Stage B)
+export async function getCartFromSupabase(userId?: string): Promise<CartItem[] | null> {
+  if (!supabase || !isSupabaseConfigured || !userId || !isValidUuid(userId)) return null;
+  try {
+    const { data: cartRow, error: cartErr } = await supabase
+      .from('carts')
+      .select('id, cart_items(*)')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (cartErr || !cartRow || !Array.isArray((cartRow as any).cart_items)) return null;
+
+    return (cartRow as any).cart_items
+      .filter((ci: any) => ci.product_snapshot && ci.product_snapshot.id)
+      .map((ci: any) => ({
+        productId: ci.product_id,
+        product: ci.product_snapshot as Product,
+        quantity: Number(ci.quantity) || 1,
+        selectedUnit: (ci.selected_unit || ci.product_snapshot.unit || 'piece') as any,
+      }));
+  } catch {
+    return null;
+  }
+}
+
+export async function syncCartToSupabase(
+  items: CartItem[],
+  userId?: string,
+  customerPhone?: string
+): Promise<boolean> {
+  if (!supabase || !isSupabaseConfigured || !userId || !isValidUuid(userId)) return false;
+  try {
+    const { data: cartRow, error: upsertErr } = await supabase
+      .from('carts')
+      .upsert(
+        {
+          user_id: userId,
+          customer_phone: customerPhone || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      )
+      .select('id')
+      .single();
+
+    if (upsertErr || !cartRow) return false;
+
+    await supabase.from('cart_items').delete().eq('cart_id', cartRow.id);
+
+    if (items.length > 0) {
+      const rows = items.map((it) => ({
+        cart_id: cartRow.id,
+        product_id: it.productId,
+        seller_id: it.product.sellerId || 'seller-1',
+        quantity: it.quantity,
+        selected_unit: it.selectedUnit || it.product.unit || 'piece',
+        unit_price: it.product.price,
+        product_snapshot: it.product,
+      }));
+      await supabase.from('cart_items').insert(rows);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 

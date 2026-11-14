@@ -22,8 +22,21 @@ import {
   Check,
   MapPin,
 } from 'lucide-react';
-import { Product, Seller, BuyerEnquiry, Category, UnitType, CategoryId, Order, OrderStatus } from '../types';
+import {
+  Product,
+  Seller,
+  BuyerEnquiry,
+  Category,
+  CategorySuggestion,
+  UnitType,
+  CategoryId,
+  Order,
+  OrderStatus,
+  ShippingScope,
+  ProductCondition,
+} from '../types';
 import { IdentityVerificationCard } from '../components/IdentityVerificationCard';
+import { checkProhibitedProduct } from '../data/indiaData';
 
 interface SellerDashboardViewProps {
   currentSeller: Seller;
@@ -37,7 +50,13 @@ interface SellerDashboardViewProps {
   onUpdateProduct: (product: Product) => void;
   onDeleteProduct: (productId: string) => void;
   onUpdateSeller: (seller: Seller) => void;
-  onUpdateOrderStatus?: (orderId: string, status: OrderStatus, notes?: string) => Promise<boolean>;
+  onUpdateOrderStatus?: (
+    orderId: string,
+    status: OrderStatus,
+    notes?: string,
+    extras?: { sellerId?: string; courierName?: string; trackingNumber?: string }
+  ) => Promise<boolean>;
+  onSuggestCategory?: (suggestion: Omit<CategorySuggestion, 'id' | 'status' | 'createdAt'>) => void;
 }
 
 export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
@@ -53,18 +72,31 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   onDeleteProduct,
   onUpdateSeller,
   onUpdateOrderStatus,
+  onSuggestCategory,
 }) => {
   const [activeTab, setActiveTab] = useState<'orders' | 'products' | 'enquiries' | 'profile' | 'kyc'>('orders');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [showSuggestCatBox, setShowSuggestCatBox] = useState(false);
+  const [sugName, setSugName] = useState('');
+  const [sugHindi, setSugHindi] = useState('');
+  const [sugSubs, setSugSubs] = useState('');
+  const [sugReason, setSugReason] = useState('');
+  const [sugSent, setSugSent] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
-  const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'active' | 'delivered' | 'cancelled'>('all');
+  const [orderFilter, setOrderFilter] = useState<'all' | 'pending' | 'active' | 'delivered' | 'returns'>('all');
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [dispatchCourierMap, setDispatchCourierMap] = useState<Record<string, string>>({});
+  const [dispatchTrackingMap, setDispatchTrackingMap] = useState<Record<string, string>>({});
 
   // Filter seller's own data (Strict RLS: seller only accesses orders with their items)
   const sellerProducts = products.filter((p) => p.sellerId === currentSeller.id);
   const sellerEnquiries = enquiries.filter((e) => e.sellerId === currentSeller.id);
   const sellerOrders = orders.filter((o) => o.items.some((item) => item.sellerId === currentSeller.id));
-  const pendingOrdersCount = sellerOrders.filter((o) => o.orderStatus === 'placed' || o.orderStatus === 'confirmed').length;
+  const pendingOrdersCount = sellerOrders.filter((o) => {
+    const sub = o.sellerOrders?.find((so) => so.sellerId === currentSeller.id);
+    const st = sub?.orderStatus || o.orderStatus;
+    return st === 'placed' || st === 'payment_confirmed' || st === 'confirmed';
+  }).length;
 
   // Form states for Add / Edit Product
   const [prodName, setProdName] = useState('');
@@ -74,8 +106,23 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
   const [prodOriginalPrice, setProdOriginalPrice] = useState<number | undefined>(1200);
   const [prodUnit, setProdUnit] = useState<UnitType>('piece');
   const [prodStock, setProdStock] = useState<number>(10);
+  const [prodMinOrderQty, setProdMinOrderQty] = useState<number>(1);
   const [prodDescription, setProdDescription] = useState('');
-  const [prodDeliveryAreas, setProdDeliveryAreas] = useState('Saharanpur City, Court Road, Delhi Road');
+  const [prodDeliveryAreas, setProdDeliveryAreas] = useState(
+    currentSeller.shipsPanIndia !== false ? 'All India Courier & Local Pickup' : `${currentSeller.city} Local`
+  );
+  const [prodShippingScope, setProdShippingScope] = useState<ShippingScope>(
+    currentSeller.shipsPanIndia !== false ? 'pan_india' : 'local_only'
+  );
+  const [prodCondition, setProdCondition] = useState<ProductCondition>('new');
+  const [prodWeightKg, setProdWeightKg] = useState<number>(1.5);
+  const [prodDimL, setProdDimL] = useState<number>(30);
+  const [prodDimB, setProdDimB] = useState<number>(20);
+  const [prodDimH, setProdDimH] = useState<number>(15);
+  const [prodDeliveryMode, setProdDeliveryMode] = useState<'standard_courier' | 'seller_transport' | 'both'>('standard_courier');
+  const [prodSellerDeliveryFee, setProdSellerDeliveryFee] = useState<number>(0);
+  const [prodLocalDeliveryAvailable, setProdLocalDeliveryAvailable] = useState<boolean>(true);
+  const [prodCodAvailable, setProdCodAvailable] = useState<boolean>(true);
   const [prodImageUrl, setProdImageUrl] = useState('');
   const [prodIsWoodcraft, setProdIsWoodcraft] = useState(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
@@ -94,14 +141,27 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
 
   const resetProductForm = () => {
     setProdName('');
-    setProdCategory('furniture');
-    setProdSubcategory('Wooden Mandir');
+    setProdCategory(currentSeller.categories[0] || 'furniture');
+    setProdSubcategory('General');
     setProdPrice(1000);
     setProdOriginalPrice(1200);
     setProdUnit('piece');
     setProdStock(10);
+    setProdMinOrderQty(1);
     setProdDescription('');
-    setProdDeliveryAreas('Saharanpur City, Court Road, Delhi Road');
+    setProdDeliveryAreas(
+      currentSeller.shipsPanIndia !== false ? 'All India Courier & Local Pickup' : `${currentSeller.city} Local`
+    );
+    setProdShippingScope(currentSeller.shipsPanIndia !== false ? 'pan_india' : 'local_only');
+    setProdCondition('new');
+    setProdWeightKg(1.5);
+    setProdDimL(30);
+    setProdDimB(20);
+    setProdDimH(15);
+    setProdDeliveryMode('standard_courier');
+    setProdSellerDeliveryFee(0);
+    setProdLocalDeliveryAvailable(true);
+    setProdCodAvailable(true);
     setProdImageUrl('');
     setProdIsWoodcraft(false);
     setFormErrors({});
@@ -122,8 +182,19 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     setProdOriginalPrice(p.originalPrice);
     setProdUnit(p.unit);
     setProdStock(p.stockCount);
+    setProdMinOrderQty(p.minOrderQuantity || 1);
     setProdDescription(p.description);
-    setProdDeliveryAreas(Array.isArray(p.deliveryAreas) ? p.deliveryAreas.join(', ') : 'Saharanpur Local');
+    setProdDeliveryAreas(Array.isArray(p.deliveryAreas) ? p.deliveryAreas.join(', ') : `${currentSeller.city} Local`);
+    setProdShippingScope(p.shippingScope || 'pan_india');
+    setProdCondition(p.condition || 'new');
+    setProdWeightKg(p.estimatedWeightKg || 1.5);
+    setProdDimL(p.dimensionsCm?.length || 30);
+    setProdDimB(p.dimensionsCm?.breadth || 20);
+    setProdDimH(p.dimensionsCm?.height || 15);
+    setProdDeliveryMode(p.deliveryMode || 'standard_courier');
+    setProdSellerDeliveryFee(p.sellerDeliveryFee || 0);
+    setProdLocalDeliveryAvailable(p.localDeliveryAvailable !== false);
+    setProdCodAvailable(p.codAvailable !== false);
     setProdImageUrl((p.images && p.images[0]) || '');
     setProdIsWoodcraft(!!p.isWoodcraftSpecial);
     setFormErrors({});
@@ -136,6 +207,11 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     if (!prodName.trim()) errors.name = 'Product name is required';
     if (!prodPrice || prodPrice <= 0) errors.price = 'Valid price in ₹ is required';
     if (!prodDescription.trim()) errors.desc = 'Product description is required';
+
+    const prohibited = checkProhibitedProduct(prodName, prodDescription);
+    if (prohibited.blocked) {
+      errors.name = prohibited.message || 'Prohibited product blocked under Indian law.';
+    }
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -155,6 +231,12 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       return;
     }
 
+    const cleanDimensions = {
+      length: Math.max(1, Number(prodDimL) || 10),
+      breadth: Math.max(1, Number(prodDimB) || 10),
+      height: Math.max(1, Number(prodDimH) || 10),
+    };
+
     if (editingProduct) {
       const updated: Product = {
         ...editingProduct,
@@ -164,10 +246,22 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         price: Number(prodPrice),
         originalPrice: prodOriginalPrice ? Number(prodOriginalPrice) : undefined,
         unit: prodUnit,
+        minOrderQuantity: Math.max(1, Number(prodMinOrderQty) || 1),
         stockCount: Number(prodStock),
         inStock: Number(prodStock) > 0,
         description: prodDescription.trim(),
-        deliveryAreas: areas.length > 0 ? areas : ['Saharanpur Local'],
+        deliveryAreas: areas.length > 0 ? areas : ['All India'],
+        shippingScope: prodShippingScope,
+        condition: prodCondition,
+        estimatedWeightKg: Math.max(0.2, Number(prodWeightKg) || 1),
+        dimensionsCm: cleanDimensions,
+        deliveryMode: prodDeliveryMode,
+        sellerDeliveryFee: Math.max(0, Number(prodSellerDeliveryFee) || 0),
+        localDeliveryAvailable: prodLocalDeliveryAvailable,
+        codAvailable: prodCodAvailable,
+        sellerCity: currentSeller.city,
+        sellerState: currentSeller.state || 'Uttar Pradesh',
+        sellerPinCode: currentSeller.pinCode,
         images: [image],
         isWoodcraftSpecial: prodIsWoodcraft,
       };
@@ -181,22 +275,34 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
         price: Number(prodPrice),
         originalPrice: prodOriginalPrice ? Number(prodOriginalPrice) : undefined,
         unit: prodUnit,
-        minOrderQuantity: 1,
+        minOrderQuantity: Math.max(1, Number(prodMinOrderQty) || 1),
         inStock: Number(prodStock) > 0,
         stockCount: Number(prodStock),
         images: [image],
         description: prodDescription.trim(),
         specifications: {
-          'Origin': 'Saharanpur, UP',
-          'Supplier': currentSeller.shopName,
+          Origin: `${currentSeller.city}, ${currentSeller.state || 'Uttar Pradesh'}`,
+          Supplier: currentSeller.shopName,
+          Condition: prodCondition === 'used_good' ? 'Pre-owned (Verified)' : prodCondition === 'refurbished' ? 'Refurbished' : 'Brand New',
         },
         sellerId: currentSeller.id,
         sellerName: currentSeller.ownerName,
         sellerShopName: currentSeller.shopName,
         sellerLocality: currentSeller.locality,
+        sellerCity: currentSeller.city,
+        sellerState: currentSeller.state || 'Uttar Pradesh',
+        sellerPinCode: currentSeller.pinCode,
         sellerPhone: currentSeller.phone,
         sellerRating: currentSeller.rating,
-        deliveryAreas: areas.length > 0 ? areas : ['Saharanpur Local'],
+        deliveryAreas: areas.length > 0 ? areas : ['All India'],
+        shippingScope: prodShippingScope,
+        condition: prodCondition,
+        estimatedWeightKg: Math.max(0.2, Number(prodWeightKg) || 1),
+        dimensionsCm: cleanDimensions,
+        deliveryMode: prodDeliveryMode,
+        sellerDeliveryFee: Math.max(0, Number(prodSellerDeliveryFee) || 0),
+        localDeliveryAvailable: prodLocalDeliveryAvailable,
+        codAvailable: prodCodAvailable,
         featured: false,
         recentlyAdded: true,
         isWoodcraftSpecial: prodIsWoodcraft,
@@ -210,6 +316,24 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
     resetProductForm();
   };
 
+  const handleSubmitCategorySuggestion = () => {
+    if (!sugName.trim() || !onSuggestCategory) return;
+    onSuggestCategory({
+      suggestedName: sugName.trim(),
+      hindiName: sugHindi.trim() || undefined,
+      sampleSubcategories: sugSubs.trim() || sugName.trim(),
+      reason: sugReason.trim() || `Requested from Seller Portal (${currentSeller.city})`,
+      suggestedBySellerId: currentSeller.id,
+      suggestedByShopName: currentSeller.shopName,
+      sellerState: currentSeller.state || 'Uttar Pradesh',
+    });
+    setSugSent(true);
+    setSugName('');
+    setSugHindi('');
+    setSugSubs('');
+    setSugReason('');
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
       {/* Top Header */}
@@ -220,13 +344,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               Seller Control Center
             </span>
             <span className="text-slate-300">•</span>
-            <span className="text-xs text-slate-500 font-medium">{currentSeller.locality}</span>
+            <span className="text-xs text-slate-500 font-medium">
+              {currentSeller.locality}, {currentSeller.city}, {currentSeller.state || 'Uttar Pradesh'}
+            </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-brand flex items-center gap-2">
             <span>{currentSeller.shopName}</span>
           </h1>
           <p className="text-xs text-slate-500">
             Proprietor: <strong className="text-slate-700">{currentSeller.ownerName}</strong> ({currentSeller.phone})
+            {currentSeller.shipsPanIndia !== false && (
+              <span className="ml-2 inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold text-[10px]">
+                Pan-India Dispatch Enabled
+              </span>
+            )}
           </p>
         </div>
 
@@ -390,7 +521,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {activeTab === 'orders' && (
         <div className="space-y-5">
           {/* Status Filter Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl max-w-xl text-xs font-semibold">
+          <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-xl max-w-2xl text-xs font-semibold">
             <button
               type="button"
               onClick={() => setOrderFilter('all')}
@@ -411,7 +542,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Pending Acceptance ({sellerOrders.filter((o) => o.orderStatus === 'placed').length})
+              New / Pending ({pendingOrdersCount})
             </button>
             <button
               type="button"
@@ -422,7 +553,14 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              In Fulfilment ({sellerOrders.filter((o) => o.orderStatus === 'confirmed' || o.orderStatus === 'processing' || o.orderStatus === 'out_for_delivery').length})
+              Packing & In Transit (
+              {
+                sellerOrders.filter((o) => {
+                  const st = o.sellerOrders?.find((so) => so.sellerId === currentSeller.id)?.orderStatus || o.orderStatus;
+                  return st === 'processing' || st === 'packed' || st === 'shipped' || st === 'out_for_delivery';
+                }).length
+              }
+              )
             </button>
             <button
               type="button"
@@ -433,24 +571,53 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Delivered ({sellerOrders.filter((o) => o.orderStatus === 'delivered').length})
+              Delivered (
+              {
+                sellerOrders.filter((o) => {
+                  const st = o.sellerOrders?.find((so) => so.sellerId === currentSeller.id)?.orderStatus || o.orderStatus;
+                  return st === 'delivered';
+                }).length
+              }
+              )
+            </button>
+            <button
+              type="button"
+              onClick={() => setOrderFilter('returns')}
+              className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                orderFilter === 'returns'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Returns & Cancelled
             </button>
           </div>
 
           {/* Filtered Orders List */}
           {(() => {
             const displayOrders = sellerOrders.filter((order) => {
+              const sub = order.sellerOrders?.find((so) => so.sellerId === currentSeller.id);
+              const effectiveStatus = sub?.orderStatus || order.orderStatus;
               if (orderFilter === 'all') return true;
-              if (orderFilter === 'pending') return order.orderStatus === 'placed';
+              if (orderFilter === 'pending') {
+                return effectiveStatus === 'placed' || effectiveStatus === 'payment_confirmed' || effectiveStatus === 'confirmed';
+              }
               if (orderFilter === 'active') {
                 return (
-                  order.orderStatus === 'confirmed' ||
-                  order.orderStatus === 'processing' ||
-                  order.orderStatus === 'out_for_delivery'
+                  effectiveStatus === 'processing' ||
+                  effectiveStatus === 'packed' ||
+                  effectiveStatus === 'shipped' ||
+                  effectiveStatus === 'out_for_delivery'
                 );
               }
-              if (orderFilter === 'delivered') return order.orderStatus === 'delivered';
-              if (orderFilter === 'cancelled') return order.orderStatus === 'cancelled';
+              if (orderFilter === 'delivered') return effectiveStatus === 'delivered';
+              if (orderFilter === 'returns') {
+                return (
+                  effectiveStatus === 'cancelled' ||
+                  effectiveStatus === 'return_requested' ||
+                  effectiveStatus === 'refunded'
+                );
+              }
               return true;
             });
 
@@ -462,7 +629,7 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                   </div>
                   <h3 className="font-bold text-slate-900 text-sm">No orders matching this filter</h3>
                   <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                    When customers place orders for items from {currentSeller.shopName}, they will appear here in real-time.
+                    When customers place orders for items from {currentSeller.shopName}, only your shop&apos;s items and fulfillment controls appear here.
                   </p>
                 </div>
               );
@@ -472,15 +639,37 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <div className="space-y-4">
                 {displayOrders.map((order) => {
                   const relevantItems = order.items.filter((item) => item.sellerId === currentSeller.id);
+                  const sellerSubOrder = order.sellerOrders?.find((so) => so.sellerId === currentSeller.id);
+                  const effectiveStatus: OrderStatus = sellerSubOrder?.orderStatus || order.orderStatus;
                   const sellerItemsTotal = relevantItems.reduce((sum, item) => sum + item.totalPrice, 0);
-                  const formattedTotal = new Intl.NumberFormat('en-IN').format(sellerItemsTotal);
+                  const sellerShipping = sellerSubOrder?.shippingFee ?? 0;
+                  const sellerCodFee = sellerSubOrder?.codFee ?? 0;
+                  const sellerGrandTotal = sellerItemsTotal + sellerShipping + sellerCodFee;
+                  const formattedTotal = new Intl.NumberFormat('en-IN').format(sellerGrandTotal);
                   const isUpdating = updatingOrderId === order.id;
 
-                  const handleStatusUpdate = async (newStatus: OrderStatus, reason?: string) => {
+                  const courierDraft =
+                    dispatchCourierMap[order.id] ??
+                    sellerSubOrder?.courierName ??
+                    (sellerSubOrder?.deliveryMode === 'seller_transport'
+                      ? 'Seller-Managed Transport / Tempo'
+                      : order.courierPartner || '');
+                  const trackingDraft =
+                    dispatchTrackingMap[order.id] ?? sellerSubOrder?.trackingNumber ?? '';
+
+                  const handleStatusUpdate = async (
+                    newStatus: OrderStatus,
+                    reason?: string,
+                    extras?: { courierName?: string; trackingNumber?: string }
+                  ) => {
                     setUpdatingOrderId(order.id);
                     try {
                       if (onUpdateOrderStatus) {
-                        await onUpdateOrderStatus(order.id, newStatus, reason);
+                        await onUpdateOrderStatus(order.id, newStatus, reason, {
+                          sellerId: currentSeller.id,
+                          courierName: extras?.courierName,
+                          trackingNumber: extras?.trackingNumber,
+                        });
                       }
                     } finally {
                       setUpdatingOrderId(null);
@@ -494,30 +683,43 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                     >
                       {/* Top Bar */}
                       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 text-xs">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-mono font-bold text-slate-900 text-sm">
-                            #{order.orderNumber}
+                            #{sellerSubOrder?.subOrderNumber || order.orderNumber}
                           </span>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${
-                              order.orderStatus === 'placed'
+                              effectiveStatus === 'placed' || effectiveStatus === 'payment_confirmed'
                                 ? 'bg-amber-100 text-amber-900'
-                                : order.orderStatus === 'confirmed'
-                                ? 'bg-blue-100 text-blue-900'
-                                : order.orderStatus === 'processing'
+                                : effectiveStatus === 'confirmed' || effectiveStatus === 'processing'
                                 ? 'bg-purple-100 text-purple-900'
-                                : order.orderStatus === 'out_for_delivery'
+                                : effectiveStatus === 'packed'
+                                ? 'bg-indigo-100 text-indigo-900'
+                                : effectiveStatus === 'shipped'
+                                ? 'bg-sky-100 text-sky-900'
+                                : effectiveStatus === 'out_for_delivery'
                                 ? 'bg-orange-100 text-orange-900'
-                                : order.orderStatus === 'delivered'
+                                : effectiveStatus === 'delivered'
                                 ? 'bg-emerald-100 text-emerald-800'
+                                : effectiveStatus === 'refunded'
+                                ? 'bg-teal-100 text-teal-800'
                                 : 'bg-red-100 text-red-800'
                             }`}
                           >
-                            Status: {order.orderStatus.replace('_', ' ')}
+                            {effectiveStatus.replace(/_/g, ' ')}
                           </span>
+                          {sellerSubOrder && (
+                            <span className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
+                              {sellerSubOrder.deliveryMode === 'seller_transport'
+                                ? 'Seller Heavy Transport'
+                                : sellerSubOrder.deliveryMode === 'mattokart_delivery'
+                                ? 'MattoKart Local Express'
+                                : 'Standard Courier'}
+                            </span>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-4 text-slate-500">
+                        <div className="flex flex-wrap items-center gap-4 text-slate-500">
                           <span>
                             Placed:{' '}
                             <strong className="text-slate-800">
@@ -530,10 +732,15 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                             </strong>
                           </span>
                           <span>
-                            Your Shop Total:{' '}
+                            Your Shop Payout:{' '}
                             <strong className="text-slate-900 text-sm font-mono font-bold">
                               ₹{formattedTotal}
                             </strong>
+                            {sellerShipping > 0 && (
+                              <span className="text-[11px] text-slate-400 ml-1">
+                                (incl. ₹{sellerShipping} ship)
+                              </span>
+                            )}
                           </span>
                         </div>
                       </div>
@@ -557,14 +764,24 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                         <div>
                           <div className="font-semibold text-slate-700 flex items-center gap-1.5 mb-1">
                             <MapPin className="w-3.5 h-3.5 text-orange-600" />
-                            <span>Delivery Destination in Saharanpur:</span>
+                            <span>Delivery Destination:</span>
                           </div>
                           <p className="text-slate-800 font-medium">
                             {order.deliveryAddress}
+                            {order.landmark ? ` (Near ${order.landmark})` : ''}
                           </p>
                           <p className="text-slate-500">
-                            {order.locality}, PIN {order.pinCode} • <span className="text-emerald-700 font-semibold uppercase">{order.paymentMethod}</span>
+                            {order.locality}, {order.city}
+                            {order.district && order.district !== order.city ? ` (${order.district})` : ''}
+                            {order.state ? `, ${order.state}` : ''} — PIN {order.pinCode} •{' '}
+                            <span className="text-emerald-700 font-semibold uppercase">{order.paymentMethod.replace(/_/g, ' ')}</span>
                           </p>
+                          {(sellerSubOrder?.courierName || sellerSubOrder?.trackingNumber) && (
+                            <p className="text-[11px] text-blue-800 font-medium mt-0.5">
+                              Carrier: {sellerSubOrder.courierName || 'Seller Dispatch'}{' '}
+                              {sellerSubOrder.trackingNumber ? `· LR / Tracking: ${sellerSubOrder.trackingNumber}` : ''}
+                            </p>
+                          )}
                           {order.notes && (
                             <p className="text-[11px] text-amber-800 mt-1 italic">
                               Customer note: &quot;{order.notes}&quot;
@@ -573,18 +790,18 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                         </div>
                       </div>
 
-                      {/* Items sold by this seller */}
+                      {/* Items sold strictly by this seller */}
                       <div className="space-y-2">
                         <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                          Items Ordered from Your Dukaan ({relevantItems.length})
+                          Items Ordered from Your Shop ({relevantItems.length})
                         </div>
                         <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
                           {relevantItems.map((item) => (
                             <div key={item.id} className="p-3 flex items-center justify-between text-xs bg-white">
                               <div className="flex items-center gap-3">
                                 <img
-                                  src={item.productImage || ''}
-                                  alt=""
+                                  src={item.productImage || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80'}
+                                  alt={item.productName}
                                   className="w-12 h-12 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
                                 />
                                 <div>
@@ -602,31 +819,65 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                         </div>
                       </div>
 
-                      {/* Seller Action Controls */}
+                      {/* Seller Dispatch Inputs when Packed */}
+                      {effectiveStatus === 'packed' && (
+                        <div className="p-3.5 bg-sky-50/70 border border-sky-200 rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <label className="block font-semibold text-slate-700 mb-1">
+                              Transporter / Courier Name
+                            </label>
+                            <input
+                              type="text"
+                              value={courierDraft}
+                              onChange={(e) =>
+                                setDispatchCourierMap((prev) => ({ ...prev, [order.id]: e.target.value }))
+                              }
+                              placeholder="e.g. VRL Logistics / Self Tempo / DTDC"
+                              className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-semibold text-slate-700 mb-1">
+                              LR / Bilty / Tracking Number (Optional for local)
+                            </label>
+                            <input
+                              type="text"
+                              value={trackingDraft}
+                              onChange={(e) =>
+                                setDispatchTrackingMap((prev) => ({ ...prev, [order.id]: e.target.value }))
+                              }
+                              placeholder="Enter genuine LR or courier tracking number"
+                              className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Seller 10-Stage Action Controls */}
                       <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100">
                         <div className="text-xs text-slate-500">
                           Current Stage:{' '}
                           <span className="font-semibold text-slate-800 capitalize">
-                            {order.orderStatus.replace('_', ' ')}
+                            {effectiveStatus.replace(/_/g, ' ')}
                           </span>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-2">
-                          {order.orderStatus === 'placed' && (
+                          {(effectiveStatus === 'placed' || effectiveStatus === 'payment_confirmed' || effectiveStatus === 'confirmed') && (
                             <>
                               <button
                                 type="button"
                                 disabled={isUpdating}
-                                onClick={() => handleStatusUpdate('confirmed')}
+                                onClick={() => handleStatusUpdate('processing', 'Accepted by seller and moved to processing')}
                                 className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                               >
                                 <Check className="w-3.5 h-3.5" />
-                                <span>Accept Order</span>
+                                <span>Accept & Process</span>
                               </button>
                               <button
                                 type="button"
                                 disabled={isUpdating}
-                                onClick={() => handleStatusUpdate('cancelled', 'Rejected by seller: item out of stock or cannot fulfill')}
+                                onClick={() => handleStatusUpdate('cancelled', 'Rejected by seller: item out of stock or unserviceable')}
                                 className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-xs rounded-xl border border-red-200 transition-colors cursor-pointer"
                               >
                                 Reject
@@ -634,49 +885,90 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                             </>
                           )}
 
-                          {order.orderStatus === 'confirmed' && (
+                          {effectiveStatus === 'processing' && (
                             <button
                               type="button"
                               disabled={isUpdating}
-                              onClick={() => handleStatusUpdate('processing')}
-                              className="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                              onClick={() => handleStatusUpdate('packed', 'Items packed and ready for pickup/dispatch')}
+                              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                             >
                               <Package className="w-3.5 h-3.5" />
-                              <span>Mark as Processing in Shop</span>
+                              <span>Mark Packed</span>
                             </button>
                           )}
 
-                          {order.orderStatus === 'processing' && (
+                          {effectiveStatus === 'packed' && (
                             <button
                               type="button"
                               disabled={isUpdating}
-                              onClick={() => handleStatusUpdate('out_for_delivery')}
+                              onClick={() =>
+                                handleStatusUpdate(
+                                  'shipped',
+                                  courierDraft
+                                    ? `Dispatched via ${courierDraft}${trackingDraft ? ` (Ref: ${trackingDraft})` : ''}`
+                                    : 'Dispatched by seller',
+                                  {
+                                    courierName: courierDraft.trim() || undefined,
+                                    trackingNumber: trackingDraft.trim() || undefined,
+                                  }
+                                )
+                              }
+                              className="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Truck className="w-3.5 h-3.5" />
+                              <span>Mark Shipped / Dispatched</span>
+                            </button>
+                          )}
+
+                          {effectiveStatus === 'shipped' && (
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={() => handleStatusUpdate('out_for_delivery', 'Shipment arrived in buyer city and out for delivery')}
                               className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                             >
                               <Truck className="w-3.5 h-3.5" />
-                              <span>Dispatch (Out for Delivery)</span>
+                              <span>Mark Out for Delivery</span>
                             </button>
                           )}
 
-                          {order.orderStatus === 'out_for_delivery' && (
+                          {effectiveStatus === 'out_for_delivery' && (
                             <button
                               type="button"
                               disabled={isUpdating}
-                              onClick={() => handleStatusUpdate('delivered')}
+                              onClick={() => handleStatusUpdate('delivered', 'Delivered to customer and COD collected')}
                               className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Mark Delivered & Payment Received (COD)</span>
+                              <span>Mark Delivered & COD Collected</span>
                             </button>
                           )}
 
-                          {order.orderStatus === 'delivered' && (
+                          {effectiveStatus === 'return_requested' && (
+                            <button
+                              type="button"
+                              disabled={isUpdating}
+                              onClick={() => handleStatusUpdate('refunded', 'Return verified and refund settled by seller')}
+                              className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Approve Return & Refund</span>
+                            </button>
+                          )}
+
+                          {effectiveStatus === 'delivered' && (
                             <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-200">
-                              ✓ Order Fulfilled & Paid
+                              ✓ Fulfilled & Delivered
                             </span>
                           )}
 
-                          {order.orderStatus === 'cancelled' && (
+                          {effectiveStatus === 'refunded' && (
+                            <span className="text-xs font-semibold text-teal-700 bg-teal-50 px-3 py-1 rounded-lg border border-teal-200">
+                              ✓ Return Settled & Refunded
+                            </span>
+                          )}
+
+                          {effectiveStatus === 'cancelled' && (
                             <span className="text-xs font-semibold text-red-700 bg-red-50 px-3 py-1 rounded-lg border border-red-200">
                               Cancelled
                             </span>
@@ -695,6 +987,72 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
       {/* Tab 1: Products */}
       {activeTab === 'products' && (
         <div className="space-y-4">
+          {/* Suggest New Category Bar */}
+          {onSuggestCategory && (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="font-bold text-slate-900">Need a product category that isn&apos;t listed yet?</span>
+                  <span className="text-slate-500 ml-2">Suggest any lawful category for admin approval.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSuggestCatBox(!showSuggestCatBox)}
+                  className="px-3 py-1.5 bg-white border border-slate-300 hover:border-orange-400 text-orange-700 font-bold rounded-lg cursor-pointer"
+                >
+                  {showSuggestCatBox ? 'Close Form' : '+ Suggest New Category'}
+                </button>
+              </div>
+              {showSuggestCatBox && (
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200">
+                  <input
+                    type="text"
+                    value={sugName}
+                    onChange={(e) => setSugName(e.target.value)}
+                    placeholder="Category Name *"
+                    className="px-3 py-2 bg-white border border-slate-200 rounded-lg"
+                  />
+                  <input
+                    type="text"
+                    value={sugHindi}
+                    onChange={(e) => setSugHindi(e.target.value)}
+                    placeholder="Hindi Name (Optional)"
+                    className="px-3 py-2 bg-white border border-slate-200 rounded-lg"
+                  />
+                  <input
+                    type="text"
+                    value={sugSubs}
+                    onChange={(e) => setSugSubs(e.target.value)}
+                    placeholder="Subcategories (comma-sep)"
+                    className="px-3 py-2 bg-white border border-slate-200 rounded-lg"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={sugReason}
+                      onChange={(e) => setSugReason(e.target.value)}
+                      placeholder="Reason"
+                      className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-200 rounded-lg"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSubmitCategorySuggestion}
+                      disabled={!sugName.trim()}
+                      className="px-3 py-2 bg-orange-600 text-white font-bold rounded-lg disabled:opacity-50 cursor-pointer shrink-0"
+                    >
+                      Send
+                    </button>
+                  </div>
+                  {sugSent && (
+                    <div className="sm:col-span-4 text-emerald-700 font-bold">
+                      ✓ Category suggestion submitted for Admin review!
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {currentSeller.status !== 'active' && (
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-xs text-amber-900 shadow-xs">
               <AlertCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
@@ -882,16 +1240,20 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
               <span className="font-medium text-slate-800">{currentSeller.ownerName}</span>
             </div>
             <div>
-              <span className="text-slate-400 block">Address in Saharanpur</span>
-              <span className="font-medium text-slate-800">{currentSeller.address}, {currentSeller.locality} ({currentSeller.pinCode})</span>
+              <span className="text-slate-400 block">Registered Shop Address</span>
+              <span className="font-medium text-slate-800">
+                {currentSeller.address}, {currentSeller.locality}, {currentSeller.city}, {currentSeller.state || 'Uttar Pradesh'} ({currentSeller.pinCode})
+              </span>
             </div>
             <div>
               <span className="text-slate-400 block">Contact Phone & WhatsApp</span>
               <span className="font-mono text-slate-800">{currentSeller.phone}</span>
             </div>
             <div>
-              <span className="text-slate-400 block">Delivery Coverage Radius</span>
-              <span className="font-medium text-slate-800">{currentSeller.deliveryRadiusKm} Kilometers</span>
+              <span className="text-slate-400 block">Shipping Coverage</span>
+              <span className="font-medium text-slate-800">
+                {currentSeller.shipsPanIndia !== false ? 'All-India Courier Dispatch + Local Delivery' : `${currentSeller.deliveryRadiusKm} Kilometers Local Radius`}
+              </span>
             </div>
           </div>
         </div>
@@ -1092,16 +1454,160 @@ export const SellerDashboardView: React.FC<SellerDashboardViewProps> = ({
                 {formErrors.desc && <p className="text-xs text-red-500 mt-1">{formErrors.desc}</p>}
               </div>
 
+              {/* Pan-India Shipping Scope, Condition & Weight */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Shipping Scope *
+                  </label>
+                  <select
+                    value={prodShippingScope}
+                    onChange={(e) => setProdShippingScope(e.target.value as ShippingScope)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white"
+                  >
+                    <option value="pan_india">Pan-India Courier</option>
+                    <option value="state_regional">State / Regional Only</option>
+                    <option value="local_only">Local City Only</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Item Condition *
+                  </label>
+                  <select
+                    value={prodCondition}
+                    onChange={(e) => setProdCondition(e.target.value as ProductCondition)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl bg-white"
+                  >
+                    <option value="new">Brand New</option>
+                    <option value="used_good">Second-hand / Used</option>
+                    <option value="refurbished">Refurbished</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Weight per Unit (Kg)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min={0.2}
+                    value={prodWeightKg}
+                    onChange={(e) => setProdWeightKg(parseFloat(e.target.value) || 1)}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Min Order Qty
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={prodMinOrderQty}
+                    onChange={(e) => setProdMinOrderQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Heavy Goods & Dimensions Config (Stage B) */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="text-xs font-bold text-slate-800">
+                  Fulfillment, Dimensions & Heavy Goods Transport
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Length (cm)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={prodDimL}
+                      onChange={(e) => setProdDimL(Number(e.target.value) || 1)}
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Breadth (cm)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={prodDimB}
+                      onChange={(e) => setProdDimB(Number(e.target.value) || 1)}
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Height (cm)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={prodDimH}
+                      onChange={(e) => setProdDimH(Number(e.target.value) || 1)}
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Delivery Mode</label>
+                    <select
+                      value={prodDeliveryMode}
+                      onChange={(e) =>
+                        setProdDeliveryMode(e.target.value as 'standard_courier' | 'seller_transport' | 'both')
+                      }
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white"
+                    >
+                      <option value="standard_courier">Standard Courier</option>
+                      <option value="seller_transport">Seller Heavy Transport</option>
+                      <option value="both">Both Courier & Transport</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Seller Ship Fee (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={prodSellerDeliveryFee}
+                      onChange={(e) => setProdSellerDeliveryFee(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-4 pt-1">
+                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={prodLocalDeliveryAvailable}
+                      onChange={(e) => setProdLocalDeliveryAvailable(e.target.checked)}
+                      className="rounded accent-orange-600"
+                    />
+                    <span>Local City / District Delivery Available</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={prodCodAvailable}
+                      onChange={(e) => setProdCodAvailable(e.target.checked)}
+                      className="rounded accent-orange-600"
+                    />
+                    <span>Cash on Delivery (COD) Eligible</span>
+                  </label>
+                </div>
+              </div>
+
               {/* Delivery Areas */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Delivery Coverage (comma-separated localities)
+                  Delivery Coverage Summary
                 </label>
                 <input
                   type="text"
                   value={prodDeliveryAreas}
                   onChange={(e) => setProdDeliveryAreas(e.target.value)}
-                  placeholder="Court Road, Delhi Road, Hasanpur, Deoband"
+                  placeholder="All India Courier, Delhi NCR, UP, Maharashtra"
                   className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-xl"
                 />
               </div>

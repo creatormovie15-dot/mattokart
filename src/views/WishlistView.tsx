@@ -42,7 +42,7 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
 
           <button
             onClick={onGoToCatalog}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#ffd814] hover:bg-[#f7ca00] text-slate-950 font-bold text-xs rounded-lg shadow-sm transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#f97316] hover:bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm transition-colors cursor-pointer"
           >
             <span>Explore Products</span>
             <ArrowRight className="w-4 h-4" />
@@ -53,7 +53,7 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+    <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-6 space-y-5">
       <div className="flex items-center justify-between pb-4 border-b border-slate-200">
         <div>
           <h1 className="text-2xl font-black text-slate-900 font-brand flex items-center gap-2">
@@ -72,7 +72,7 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-3">
         {wishlistedProducts.map((product) => {
           const formattedPrice = new Intl.NumberFormat('en-IN').format(product.price);
           const fallbackImg =
@@ -81,16 +81,17 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
           return (
             <div
               key={product.id}
-              className="bg-white rounded-xl border border-slate-200 hover:border-slate-300 hover:shadow-md transition-all flex flex-col justify-between overflow-hidden p-4 space-y-3"
+              className="bg-white rounded-lg border border-slate-200 hover:border-orange-300 hover:shadow-md transition-all flex flex-col justify-between overflow-hidden p-2.5 space-y-2"
             >
               <div
-                className="aspect-square rounded-lg bg-slate-50 overflow-hidden cursor-pointer p-2 flex items-center justify-center relative"
+                className="h-28 sm:h-32 rounded bg-white border border-slate-100 overflow-hidden cursor-pointer p-2 flex items-center justify-center relative"
                 onClick={() => onViewProductDetails(product)}
               >
                 <img
                   src={(product.images && product.images[0]) || fallbackImg}
                   alt={product.name}
-                  className="w-full h-full object-contain hover:scale-105 transition-transform"
+                  referrerPolicy="no-referrer"
+                  className="max-h-full max-w-full object-contain hover:scale-105 transition-transform"
                 />
               </div>
 
@@ -121,9 +122,9 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
                     onRemoveFromWishlist(product.id);
                   }}
                   disabled={!product.inStock}
-                  className="w-full py-2 bg-[#ffd814] hover:bg-[#f7ca00] text-slate-950 font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="w-full py-2 bg-[#f97316] hover:bg-orange-600 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
-                  <ShoppingCart className="w-3.5 h-3.5 text-slate-950" />
+                  <ShoppingCart className="w-3.5 h-3.5 text-white" />
                   <span>Move to Cart</span>
                 </button>
 

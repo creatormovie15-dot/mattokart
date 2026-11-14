@@ -1,16 +1,23 @@
 export type CategoryId =
   | 'construction'
+  | 'furniture'
   | 'electronics'
+  | 'mobile-accessories'
   | 'fashion'
   | 'clothing-fashion'
+  | 'shoes-bags'
   | 'home-kitchen'
-  | 'furniture'
-  | 'tools-hardware'
   | 'grocery-food'
+  | 'agriculture'
+  | 'tools-hardware'
+  | 'automobile'
   | 'beauty-care'
   | 'toys-baby'
-  | 'agriculture'
-  | 'other-permitted';
+  | 'books-stationery'
+  | 'handmade-crafts'
+  | 'used-goods'
+  | 'other-permitted'
+  | (string & {});
 
 export interface Category {
   id: CategoryId;
@@ -22,7 +29,24 @@ export interface Category {
   subcategories: string[];
 }
 
-export type UnitType = 'piece' | 'kg' | 'bag' | 'quintal' | 'meter' | 'set' | 'box' | 'pair' | 'sq.ft';
+export interface CategorySuggestion {
+  id: string;
+  suggestedName: string;
+  hindiName?: string;
+  sampleSubcategories: string;
+  reason: string;
+  suggestedBySellerId?: string;
+  suggestedByShopName: string;
+  sellerState?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
+export type UnitType = 'piece' | 'kg' | 'bag' | 'quintal' | 'meter' | 'set' | 'box' | 'pair' | 'sq.ft' | 'litre' | 'pack';
+
+export type ShippingScope = 'local_only' | 'state_regional' | 'pan_india';
+
+export type ProductCondition = 'new' | 'used_good' | 'refurbished';
 
 export interface Product {
   id: string;
@@ -42,9 +66,20 @@ export interface Product {
   sellerName: string;
   sellerShopName: string;
   sellerLocality: string;
+  sellerCity?: string;
+  sellerState?: string;
+  sellerPinCode?: string;
   sellerPhone: string;
   sellerRating: number;
   deliveryAreas: string[];
+  shippingScope?: ShippingScope;
+  estimatedWeightKg?: number;
+  dimensionsCm?: { length: number; breadth: number; height: number };
+  deliveryMode?: 'standard_courier' | 'seller_transport' | 'both';
+  sellerDeliveryFee?: number;
+  localDeliveryAvailable?: boolean;
+  codAvailable?: boolean;
+  condition?: ProductCondition;
   featured?: boolean;
   recentlyAdded?: boolean;
   isWoodcraftSpecial?: boolean;
@@ -55,7 +90,9 @@ export interface Product {
 
 export type UserRole = 'customer' | 'seller' | 'admin' | 'delivery_partner';
 
-export type DeliveryType = 'seller_delivery' | 'mattokart_delivery';
+export type DeliveryType = 'seller_delivery' | 'mattokart_delivery' | 'interstate_courier' | 'seller_transport';
+
+export type ShippingZone = 'local' | 'intercity' | 'interstate';
 
 export type DeliveryStatus =
   | 'pending'
@@ -95,7 +132,10 @@ export type IdentityVerificationMethod =
   | 'digilocker_authorized'
   | 'gstin_verified'
   | 'trade_license'
+  | 'udyam_msme'
   | 'physical_inspection_saharanpur';
+
+export type SellerType = 'shopkeeper' | 'wholesaler' | 'manufacturer' | 'artisan' | 'individual';
 
 export interface AuthUser {
   id: string;
@@ -111,11 +151,14 @@ export interface Seller {
   id: string;
   ownerName: string;
   shopName: string;
+  sellerType?: SellerType;
   phone: string;
   email: string;
   address: string;
   locality: string;
+  district?: string;
   city: string;
+  state?: string;
   pinCode: string;
   landmark?: string;
   categories: CategoryId[];
@@ -130,10 +173,11 @@ export interface Seller {
   shopLogo?: string;
   description: string;
   deliveryRadiusKm: number;
-  // Identity Verification (Saharanpur Vendor KYC)
+  shipsPanIndia?: boolean;
+  // Identity Verification (All India Vendor KYC)
   identityVerificationStatus: IdentityVerificationStatus;
   identityVerificationMethod?: IdentityVerificationMethod;
-  verificationReferenceId?: string; // DigiLocker ref, GSTIN, or Municipal license # (NEVER raw Aadhaar!)
+  verificationReferenceId?: string; // DigiLocker ref, GSTIN, Udyam, or Trade license (NEVER raw Aadhaar!)
   verificationRejectionReason?: string;
   reviewedBy?: string;
   reviewedAt?: string;
@@ -182,7 +226,10 @@ export interface BuyerEnquiry {
 export interface SaharanpurLocality {
   name: string;
   pinCode: string;
-  areaType: 'Urban Market' | 'Commercial Hub' | 'Industrial Zone' | 'Sub-division / Tehsil';
+  city?: string;
+  district?: string;
+  state?: string;
+  areaType: 'Urban Market' | 'Commercial Hub' | 'Industrial Zone' | 'Sub-division / Tehsil' | 'Pan-India City';
 }
 
 export interface CartItem {
@@ -195,14 +242,56 @@ export interface CartItem {
 export type OrderStatus =
   | 'placed'
   | 'confirmed'
+  | 'payment_confirmed'
   | 'processing'
+  | 'packed'
+  | 'shipped'
   | 'out_for_delivery'
   | 'delivered'
-  | 'cancelled';
+  | 'cancelled'
+  | 'return_requested'
+  | 'refunded';
 
 export type PaymentMethod = 'cod' | 'pay_on_delivery' | 'upi_on_delivery' | 'offline_direct';
 
 export type PaymentStatus = 'pending' | 'completed' | 'failed' | 'refunded';
+
+export interface OrderTrackingEvent {
+  id: string;
+  orderId: string;
+  sellerOrderId?: string;
+  status: OrderStatus;
+  title: string;
+  description?: string;
+  location?: string;
+  actorRole: 'customer' | 'seller' | 'admin' | 'courier' | 'system';
+  createdAt: string;
+}
+
+export interface SellerSubOrder {
+  id: string;
+  orderId: string;
+  subOrderNumber: string;
+  sellerId: string;
+  sellerShopName: string;
+  sellerCity?: string;
+  sellerState?: string;
+  sellerPinCode?: string;
+  subtotal: number;
+  shippingFee: number;
+  codFee: number;
+  totalAmount: number;
+  deliveryMode: DeliveryType;
+  deliveryStatus: DeliveryStatus;
+  orderStatus: OrderStatus;
+  courierName?: string;
+  trackingNumber?: string;
+  estimatedDelivery?: string;
+  notes?: string;
+  items: OrderItem[];
+  createdAt: string;
+  updatedAt?: string;
+}
 
 export interface OrderItem {
   id: string;
@@ -216,7 +305,7 @@ export interface OrderItem {
   quantity: number;
   unit: UnitType;
   totalPrice: number;
-  itemStatus: 'pending' | 'confirmed' | 'ready_for_pickup' | 'shipped' | 'delivered' | 'cancelled';
+  itemStatus: 'pending' | 'confirmed' | 'ready_for_pickup' | 'packed' | 'shipped' | 'delivered' | 'cancelled' | 'return_requested' | 'refunded';
   createdAt: string;
 }
 
@@ -228,18 +317,28 @@ export interface Order {
   customerPhone: string;
   customerEmail?: string;
   deliveryAddress: string;
+  landmark?: string;
   locality: string;
+  district?: string;
   city: string;
   state?: string;
   pinCode: string;
+  subtotalAmount?: number;
+  codFee?: number;
   totalAmount: number;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   orderStatus: OrderStatus;
   notes?: string;
   items: OrderItem[];
-  // Dual Delivery System Fields
+  sellerOrders?: SellerSubOrder[];
+  trackingEvents?: OrderTrackingEvent[];
+  // Dual & Pan-India Delivery System Fields
   deliveryType?: DeliveryType;
+  shippingZone?: ShippingZone;
+  courierPartner?: string;
+  trackingNumber?: string;
+  estimatedDeliveryWindow?: string;
   deliveryFee?: number;
   deliveryPartnerId?: string;
   deliveryPartnerName?: string;
@@ -270,8 +369,11 @@ export interface SavedAddress {
   id: string;
   fullName: string;
   phone: string;
+  email?: string;
   addressLine: string;
+  landmark?: string;
   locality: string;
+  district?: string;
   city: string;
   state: string;
   pinCode: string;
@@ -302,4 +404,3 @@ export type LegalDocType =
   | 'terms'
   | 'seller-agreement'
   | 'returns-refunds';
-

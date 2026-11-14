@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Product, Category, CategoryId, SaharanpurLocality } from '../types';
 import { SAHARANPUR_LOCALITIES } from '../data/mockData';
+import { INDIAN_STATES_UTS } from '../data/indiaData';
 import { ProductCard } from '../components/ProductCard';
 
 interface CatalogViewProps {
@@ -49,6 +50,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   onToggleWishlist,
 }) => {
   const [selectedLocalityFilter, setSelectedLocalityFilter] = useState<string>('all');
+  const [selectedStateFilter, setSelectedStateFilter] = useState<string>('all');
+  const [shippingConditionFilter, setShippingConditionFilter] = useState<'all' | 'pan_india' | 'new_only' | 'used_refurbished'>('all');
   const [maxPrice, setMaxPrice] = useState<number>(50000);
   const [onlyInStock, setOnlyInStock] = useState<boolean>(false);
   const [onlyWoodcraft, setOnlyWoodcraft] = useState<boolean>(false);
@@ -65,6 +68,22 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       // Category filter
       if (selectedCategory !== 'all' && p.categoryId !== selectedCategory) {
         return false;
+      }
+
+      // Seller State filter
+      if (selectedStateFilter !== 'all') {
+        const prodState = (p.sellerState || 'Uttar Pradesh').toLowerCase();
+        if (prodState !== selectedStateFilter.toLowerCase()) return false;
+      }
+
+      // Shipping / Condition filter
+      if (shippingConditionFilter === 'pan_india') {
+        const scope = p.shippingScope || (p.categoryId === 'construction' ? 'state_regional' : 'pan_india');
+        if (scope !== 'pan_india') return false;
+      } else if (shippingConditionFilter === 'new_only') {
+        if (p.condition && p.condition !== 'new') return false;
+      } else if (shippingConditionFilter === 'used_refurbished') {
+        if (p.condition !== 'used_good' && p.condition !== 'refurbished') return false;
       }
 
       // Locality filter
@@ -92,11 +111,11 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         return false;
       }
 
-      // Search query - multi-token keyword search
+      // Search query - multi-token keyword search across title, category, shop, city, state, PIN
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const searchTerms = q.split(/\s+/).filter(Boolean);
-        const searchableText = `${p.name || ''} ${p.description || ''} ${p.subcategory || ''} ${p.sellerShopName || ''} ${p.sellerLocality || ''}`.toLowerCase();
+        const searchableText = `${p.name || ''} ${p.description || ''} ${p.subcategory || ''} ${p.sellerShopName || ''} ${p.sellerLocality || ''} ${p.sellerCity || ''} ${p.sellerState || ''} ${p.sellerPinCode || ''}`.toLowerCase();
         const matchesAllTerms = searchTerms.every((term) => searchableText.includes(term));
         if (!matchesAllTerms) {
           return false;
@@ -119,6 +138,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
   }, [
     products,
     selectedCategory,
+    selectedStateFilter,
+    shippingConditionFilter,
     selectedLocalityFilter,
     maxPrice,
     onlyInStock,
@@ -129,6 +150,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
   const handleResetFilters = () => {
     onSelectCategory('all');
+    setSelectedStateFilter('all');
+    setShippingConditionFilter('all');
     setSelectedLocalityFilter('all');
     setMaxPrice(50000);
     setOnlyInStock(false);
@@ -139,6 +162,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
   const activeFiltersCount =
     (selectedCategory !== 'all' ? 1 : 0) +
+    (selectedStateFilter !== 'all' ? 1 : 0) +
+    (shippingConditionFilter !== 'all' ? 1 : 0) +
     (selectedLocalityFilter !== 'all' ? 1 : 0) +
     (maxPrice < 50000 ? 1 : 0) +
     (onlyInStock ? 1 : 0) +
@@ -152,26 +177,26 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
     const searchTerms = q.split(/\s+/).filter(Boolean);
     return products.filter((p) => {
       if (p.status === 'approved') return false;
-      const searchableText = `${p.name || ''} ${p.description || ''} ${p.subcategory || ''} ${p.sellerShopName || ''} ${p.sellerLocality || ''}`.toLowerCase();
+      const searchableText = `${p.name || ''} ${p.description || ''} ${p.subcategory || ''} ${p.sellerShopName || ''} ${p.sellerLocality || ''} ${p.sellerCity || ''} ${p.sellerState || ''}`.toLowerCase();
       return searchTerms.every((term) => searchableText.includes(term));
     });
   }, [products, searchQuery]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+    <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-5 space-y-5">
       {/* Top Banner & Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-200">
         <div>
-          <div className="flex items-center gap-2 text-xs text-orange-600 font-bold uppercase tracking-wider mb-1">
-            <span>MattoKart Saharanpur Catalog</span>
+          <div className="flex items-center gap-2 text-xs text-orange-600 font-bold uppercase tracking-wider mb-0.5">
+            <span>MattoKart Pan-India Catalog</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 font-brand">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 font-brand">
             {selectedCategory === 'all'
-              ? 'All Products & Materials'
+              ? 'All Products Across India'
               : categories.find((c) => c.id === selectedCategory)?.name || 'Products'}
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500">
-            Showing <strong className="text-slate-900">{filteredProducts.length}</strong> verified products available for local Saharanpur supply
+          <p className="text-xs text-slate-500">
+            Showing <strong className="text-slate-900">{filteredProducts.length}</strong> verified products from sellers across India (PIN {currentLocality.pinCode})
           </p>
         </div>
 
@@ -180,7 +205,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           {/* Mobile Filter Trigger */}
           <button
             onClick={() => setMobileFilterOpen(true)}
-            className="lg:hidden flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 shadow-xs cursor-pointer"
+            className="lg:hidden flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 shadow-xs cursor-pointer"
           >
             <Filter className="w-3.5 h-3.5 text-orange-600" />
             <span>Filters</span>
@@ -192,7 +217,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           </button>
 
           {/* Sort Selector */}
-          <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-xs">
+          <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs">
             <ArrowUpDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <select
               value={sortBy}
@@ -208,10 +233,10 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
           </div>
 
           {/* Grid / List Switcher */}
-          <div className="hidden sm:flex items-center border border-slate-300 rounded-xl overflow-hidden bg-white">
+          <div className="hidden sm:flex items-center border border-slate-300 rounded-lg overflow-hidden bg-white">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-2 transition-colors cursor-pointer ${
+              className={`p-1.5 transition-colors cursor-pointer ${
                 viewMode === 'grid' ? 'bg-orange-50 text-orange-600' : 'text-slate-400 hover:text-slate-700'
               }`}
               title="Grid View"
@@ -220,7 +245,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`p-2 transition-colors cursor-pointer ${
+              className={`p-1.5 transition-colors cursor-pointer ${
                 viewMode === 'list' ? 'bg-orange-50 text-orange-600' : 'text-slate-400 hover:text-slate-700'
               }`}
               title="List View"
@@ -232,12 +257,12 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
       </div>
 
       {/* Main Layout: Filters Sidebar + Products Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[230px_1fr] gap-4 items-start">
         {/* Desktop Sidebar Filters */}
-        <aside className="hidden lg:block space-y-6 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs sticky top-28">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div className="flex items-center gap-2 font-bold text-sm text-slate-900">
-              <SlidersHorizontal className="w-4 h-4 text-orange-600" />
+        <aside className="hidden lg:block space-y-5 bg-white p-4 rounded-lg border border-slate-200 shadow-xs sticky top-28">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+            <div className="flex items-center gap-2 font-bold text-xs text-slate-900">
+              <SlidersHorizontal className="w-3.5 h-3.5 text-orange-600" />
               <span>Filters & Categories</span>
             </div>
             {activeFiltersCount > 0 && (
@@ -253,30 +278,30 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
           {/* Search inside catalog */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
               Search Products
             </label>
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Title, material, shop..."
-                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                className="w-full pl-8 pr-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               />
             </div>
           </div>
 
           {/* Categories Filter */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wider">
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
               Categories
             </label>
-            <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+            <div className="space-y-0.5 max-h-56 overflow-y-auto pr-1">
               <button
                 onClick={() => onSelectCategory('all')}
-                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-between cursor-pointer ${
+                className={`w-full text-left px-2 py-1.5 rounded text-xs font-medium transition-colors flex items-center justify-between cursor-pointer ${
                   selectedCategory === 'all'
                     ? 'bg-orange-50 text-orange-700 font-bold'
                     : 'text-slate-600 hover:bg-slate-50'
@@ -290,7 +315,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 <button
                   key={cat.id}
                   onClick={() => onSelectCategory(cat.id)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center justify-between cursor-pointer ${
+                  className={`w-full text-left px-2 py-1.5 rounded text-xs font-medium transition-colors flex items-center justify-between cursor-pointer ${
                     selectedCategory === cat.id
                       ? 'bg-orange-50 text-orange-700 font-bold'
                       : 'text-slate-600 hover:bg-slate-50'
@@ -303,17 +328,53 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
             </div>
           </div>
 
+          {/* Seller State / UT Filter */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
+              Seller State / UT (India)
+            </label>
+            <select
+              value={selectedStateFilter}
+              onChange={(e) => setSelectedStateFilter(e.target.value)}
+              className="w-full p-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+            >
+              <option value="all">All States &amp; UTs</option>
+              {INDIAN_STATES_UTS.map((st) => (
+                <option key={st.name} value={st.name}>
+                  {st.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Shipping & Condition Filter */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
+              Shipping &amp; Condition
+            </label>
+            <select
+              value={shippingConditionFilter}
+              onChange={(e) => setShippingConditionFilter(e.target.value as any)}
+              className="w-full p-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+            >
+              <option value="all">All Conditions &amp; Shipping</option>
+              <option value="pan_india">Pan-India Shipping Only</option>
+              <option value="new_only">Brand New Products</option>
+              <option value="used_refurbished">Second-hand / Refurbished</option>
+            </select>
+          </div>
+
           {/* Saharanpur Locality Filter */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wider">
-              Locality / Market (Saharanpur)
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1.5 uppercase tracking-wider">
+              Saharanpur Hub / Market
             </label>
             <select
               value={selectedLocalityFilter}
               onChange={(e) => setSelectedLocalityFilter(e.target.value)}
-              className="w-full p-2 text-xs border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+              className="w-full p-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
             >
-              <option value="all">All Saharanpur Localities</option>
+              <option value="all">All Markets</option>
               {SAHARANPUR_LOCALITIES.map((loc) => (
                 <option key={loc.name} value={loc.name}>
                   {loc.name} ({loc.pinCode})
@@ -324,7 +385,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
           {/* Price Range Slider */}
           <div>
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-700 mb-1.5">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700 mb-1.5">
               <span className="uppercase tracking-wider">Max Price (₹)</span>
               <span className="font-mono text-orange-600 font-bold">
                 ₹{new Intl.NumberFormat('en-IN').format(maxPrice)}
@@ -365,7 +426,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                 className="rounded accent-orange-600"
               />
               <span className="flex items-center gap-1">
-                <span>Saharanpur GI Woodcraft Only</span>
+                <span>GI Woodcraft Only</span>
                 <Sparkles className="w-3 h-3 text-amber-500" />
               </span>
             </label>
@@ -373,52 +434,70 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
         </aside>
 
         {/* Products Listing Area */}
-        <div className="lg:col-span-3 space-y-4">
+        <div className="min-w-0 space-y-4">
           {/* Active filter pills */}
           {activeFiltersCount > 0 && (
-            <div className="flex flex-wrap items-center gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-200">
+            <div className="flex flex-wrap items-center gap-2 bg-white p-2.5 rounded-lg border border-slate-200">
               <span className="text-xs text-slate-500 font-medium">Applied Filters:</span>
 
               {selectedCategory !== 'all' && (
-                <span className="inline-flex items-center gap-1 bg-white border border-slate-200 text-xs px-2.5 py-1 rounded-full text-slate-700">
+                <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-xs px-2 py-0.5 rounded text-slate-700">
                   <span>Category: {categories.find((c) => c.id === selectedCategory)?.name}</span>
-                  <button onClick={() => onSelectCategory('all')} className="hover:text-red-500">
+                  <button onClick={() => onSelectCategory('all')} className="hover:text-red-500 cursor-pointer">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+
+              {selectedStateFilter !== 'all' && (
+                <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-xs px-2 py-0.5 rounded text-slate-700">
+                  <span>State: {selectedStateFilter}</span>
+                  <button onClick={() => setSelectedStateFilter('all')} className="hover:text-red-500 cursor-pointer">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+
+              {shippingConditionFilter !== 'all' && (
+                <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-xs px-2 py-0.5 rounded text-slate-700">
+                  <span>{shippingConditionFilter.replace('_', ' ')}</span>
+                  <button onClick={() => setShippingConditionFilter('all')} className="hover:text-red-500 cursor-pointer">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
               )}
 
               {selectedLocalityFilter !== 'all' && (
-                <span className="inline-flex items-center gap-1 bg-white border border-slate-200 text-xs px-2.5 py-1 rounded-full text-slate-700">
+                <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-xs px-2 py-0.5 rounded text-slate-700">
                   <span>Locality: {selectedLocalityFilter}</span>
-                  <button onClick={() => setSelectedLocalityFilter('all')} className="hover:text-red-500">
+                  <button onClick={() => setSelectedLocalityFilter('all')} className="hover:text-red-500 cursor-pointer">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
               )}
 
               {searchQuery && (
-                <span className="inline-flex items-center gap-1 bg-white border border-slate-200 text-xs px-2.5 py-1 rounded-full text-slate-700">
+                <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-xs px-2 py-0.5 rounded text-slate-700">
                   <span>Search: "{searchQuery}"</span>
-                  <button onClick={() => setSearchQuery('')} className="hover:text-red-500">
+                  <button onClick={() => setSearchQuery('')} className="hover:text-red-500 cursor-pointer">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
               )}
 
               {onlyInStock && (
-                <span className="inline-flex items-center gap-1 bg-white border border-slate-200 text-xs px-2.5 py-1 rounded-full text-slate-700">
+                <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-xs px-2 py-0.5 rounded text-slate-700">
                   <span>In-Stock Only</span>
-                  <button onClick={() => setOnlyInStock(false)} className="hover:text-red-500">
+                  <button onClick={() => setOnlyInStock(false)} className="hover:text-red-500 cursor-pointer">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
               )}
 
               {onlyWoodcraft && (
-                <span className="inline-flex items-center gap-1 bg-white border border-slate-200 text-xs px-2.5 py-1 rounded-full text-slate-700">
+                <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-xs px-2 py-0.5 rounded text-slate-700">
                   <span>GI Woodcraft Only</span>
-                  <button onClick={() => setOnlyWoodcraft(false)} className="hover:text-red-500">
+                  <button onClick={() => setOnlyWoodcraft(false)} className="hover:text-red-500 cursor-pointer">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
@@ -426,7 +505,7 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
               <button
                 onClick={handleResetFilters}
-                className="text-xs text-orange-600 font-bold hover:underline ml-auto"
+                className="text-xs text-orange-600 font-bold hover:underline ml-auto cursor-pointer"
               >
                 Clear All
               </button>
@@ -435,8 +514,8 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
           {/* Pending Verification Notice for Search Queries */}
           {pendingSearchMatches.length > 0 && (
-            <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-900 shadow-xs">
-              <Sparkles className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="bg-amber-50/90 border border-amber-200 rounded-lg p-3.5 flex items-start gap-3 text-amber-900 shadow-xs">
+              <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div className="text-xs space-y-1">
                 <p className="font-bold text-amber-950">
                   {pendingSearchMatches.length} matching item{pendingSearchMatches.length > 1 ? 's' : ''} is currently Pending Admin Verification
@@ -450,12 +529,12 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
 
           {/* Empty State */}
           {filteredProducts.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center mx-auto">
-                <Search className="w-8 h-8" />
+            <div className="bg-white rounded-lg border border-slate-200 p-10 text-center space-y-3">
+              <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center mx-auto">
+                <Search className="w-7 h-7" />
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-bold text-slate-900">
+                <h3 className="text-base font-bold text-slate-900">
                   No matching products found
                 </h3>
                 <p className="text-xs text-slate-500 max-w-md mx-auto">
@@ -464,14 +543,14 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               </div>
               <button
                 onClick={handleResetFilters}
-                className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl transition-colors"
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer"
               >
                 Reset All Filters
               </button>
             </div>
           ) : viewMode === 'grid' ? (
-            /* Grid View */
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+            /* Grid View: 5 cards/row desktop, 2 cards/row mobile */
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5 sm:gap-3">
               {filteredProducts.map((product) => (
                 <ProductCard
                   key={product.id}
@@ -606,17 +685,53 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
               </div>
             </div>
 
+            {/* Mobile Seller State */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">
+                Seller State / UT
+              </label>
+              <select
+                value={selectedStateFilter}
+                onChange={(e) => setSelectedStateFilter(e.target.value)}
+                className="w-full p-2 text-xs border border-slate-200 rounded-xl"
+              >
+                <option value="all">All States &amp; UTs (India)</option>
+                {INDIAN_STATES_UTS.map((st) => (
+                  <option key={st.name} value={st.name}>
+                    {st.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Mobile Shipping & Condition */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">
+                Shipping &amp; Condition
+              </label>
+              <select
+                value={shippingConditionFilter}
+                onChange={(e) => setShippingConditionFilter(e.target.value as any)}
+                className="w-full p-2 text-xs border border-slate-200 rounded-xl"
+              >
+                <option value="all">All Conditions &amp; Shipping</option>
+                <option value="pan_india">Pan-India Shipping Only</option>
+                <option value="new_only">Brand New</option>
+                <option value="used_refurbished">Second-hand / Refurbished</option>
+              </select>
+            </div>
+
             {/* Mobile Locality */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">
-                Saharanpur Locality
+                Saharanpur Hub / Market
               </label>
               <select
                 value={selectedLocalityFilter}
                 onChange={(e) => setSelectedLocalityFilter(e.target.value)}
                 className="w-full p-2 text-xs border border-slate-200 rounded-xl"
               >
-                <option value="all">All Localities</option>
+                <option value="all">All Markets</option>
                 {SAHARANPUR_LOCALITIES.map((loc) => (
                   <option key={loc.name} value={loc.name}>
                     {loc.name}
