@@ -42,7 +42,7 @@ export const Footer: React.FC<FooterProps> = ({
               </div>
             </div>
 
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <p className="text-xs text-slate-300 leading-relaxed">
               India Ka Apna Shopping Marketplace — Buy Anywhere. Sell Everywhere. Connecting verified sellers across all 28 States &amp; 8 UTs starting from Saharanpur (UP-11).
             </p>
 
@@ -50,37 +50,37 @@ export const Footer: React.FC<FooterProps> = ({
               <a
                 href="tel:+918221077674"
                 aria-label="Call MattoKart"
-                className="w-8 h-8 rounded-full bg-[#122b4e] hover:bg-[#f97316] text-white flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-full bg-[#122b4e] hover:bg-[#c2410c] text-white flex items-center justify-center transition-colors"
                 title="Call +91 8221077674"
               >
-                <Phone className="w-3.5 h-3.5" />
+                <Phone className="w-3.5 h-3.5" aria-hidden="true" />
               </a>
               <a
                 href="https://wa.me/918221077674"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="WhatsApp MattoKart"
-                className="w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-full bg-emerald-700 hover:bg-emerald-600 text-white flex items-center justify-center transition-colors"
                 title="WhatsApp Support"
               >
-                <MessageCircle className="w-3.5 h-3.5" />
+                <MessageCircle className="w-3.5 h-3.5" aria-hidden="true" />
               </a>
               <a
                 href="mailto:creatormovie15@gmail.com"
                 aria-label="Email MattoKart"
-                className="w-8 h-8 rounded-full bg-[#122b4e] hover:bg-[#f97316] text-white flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-full bg-[#122b4e] hover:bg-[#c2410c] text-white flex items-center justify-center transition-colors"
                 title="creatormovie15@gmail.com"
               >
-                <Mail className="w-3.5 h-3.5" />
+                <Mail className="w-3.5 h-3.5" aria-hidden="true" />
               </a>
             </div>
           </div>
 
           {/* Column 2: Quick Links */}
           <div className="space-y-2.5">
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider">
+            <h2 className="text-white font-bold text-xs uppercase tracking-wider">
               Quick Links
-            </h4>
+            </h2>
             <ul className="space-y-2 text-xs text-slate-300">
               <li>
                 <button
@@ -132,9 +132,9 @@ export const Footer: React.FC<FooterProps> = ({
 
           {/* Column 3: Customer Service */}
           <div className="space-y-2.5">
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider">
+            <h2 className="text-white font-bold text-xs uppercase tracking-wider">
               Customer Service
-            </h4>
+            </h2>
             <ul className="space-y-2 text-xs text-slate-300">
               <li>
                 <button
@@ -202,9 +202,9 @@ export const Footer: React.FC<FooterProps> = ({
 
           {/* Column 4: Seller Corner */}
           <div className="space-y-2.5">
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider">
+            <h2 className="text-white font-bold text-xs uppercase tracking-wider">
               Seller Corner
-            </h4>
+            </h2>
             <ul className="space-y-2 text-xs text-slate-300">
               <li>
                 <button
@@ -256,35 +256,35 @@ export const Footer: React.FC<FooterProps> = ({
 
           {/* Column 5: Contact Us & Saharanpur Support */}
           <div className="space-y-2.5">
-            <h4 className="text-white font-bold text-xs uppercase tracking-wider">
+            <h2 className="text-white font-bold text-xs uppercase tracking-wider">
               Contact Us
-            </h4>
+            </h2>
             <div className="space-y-2 text-xs text-slate-300">
               <a
                 href="mailto:creatormovie15@gmail.com"
-                className="flex items-center gap-2 hover:text-orange-400 transition-colors break-all"
+                className="flex items-center gap-2 hover:text-orange-300 transition-colors break-all"
               >
-                <Mail className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <Mail className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
                 <span>creatormovie15@gmail.com</span>
               </a>
               <a
                 href="tel:+918221077674"
-                className="flex items-center gap-2 hover:text-orange-400 transition-colors"
+                className="flex items-center gap-2 hover:text-orange-300 transition-colors"
               >
-                <Phone className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <Phone className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
                 <span>+91 8221077674</span>
               </a>
               <a
                 href="https://wa.me/918221077674"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 text-emerald-400 hover:text-emerald-300 font-semibold transition-colors"
+                className="flex items-center gap-2 text-emerald-300 hover:text-emerald-200 font-semibold transition-colors"
               >
-                <MessageCircle className="w-3.5 h-3.5 shrink-0" />
+                <MessageCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                 <span>WhatsApp Chat</span>
               </a>
-              <div className="flex items-start gap-2 text-slate-400 pt-1">
-                <MapPin className="w-3.5 h-3.5 text-orange-400 shrink-0 mt-0.5" />
+              <div className="flex items-start gap-2 text-slate-300 pt-1">
+                <MapPin className="w-3.5 h-3.5 text-orange-400 shrink-0 mt-0.5" aria-hidden="true" />
                 <span>Court Road Commercial Hub, Saharanpur, UP - 247001</span>
               </div>
             </div>
@@ -292,9 +292,9 @@ export const Footer: React.FC<FooterProps> = ({
         </div>
 
         {/* Permitted Goods & Lawful Trade Notice */}
-        <div className="px-4 py-2.5 rounded-xl bg-[#0d2444] border border-white/10 text-xs text-slate-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+        <div className="px-4 py-2.5 rounded-xl bg-[#0d2444] border border-white/10 text-xs text-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" aria-hidden="true" />
             <span>
               <strong>Permitted Goods Only:</strong> Verified Pan-India merchants &amp; artisans with Cash on Delivery, local &amp; interstate courier fulfillment.
             </span>
@@ -305,11 +305,11 @@ export const Footer: React.FC<FooterProps> = ({
         </div>
 
         {/* Bottom Copyright Bar */}
-        <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
+        <div className="pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-300">
           <div>
             © {new Date().getFullYear()} MattoKart. All Rights Reserved. | Sab Kuch, Ek Hi Jagah!
           </div>
-          <div className="text-slate-300">
+          <div className="text-slate-200">
             Buy Anywhere. Sell Everywhere. · Made in India
           </div>
         </div>

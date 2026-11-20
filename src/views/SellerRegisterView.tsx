@@ -65,6 +65,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
   const [testOtpCode, setTestOtpCode] = useState<string | null>(null);
+  const [otpChallengeToken, setOtpChallengeToken] = useState<string | undefined>(undefined);
   const [email, setEmail] = useState('');
 
   // Step 2: All-India Address & Shipping Coverage
@@ -142,6 +143,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
 
     if (res.success) {
       setIsOtpSent(true);
+      setOtpChallengeToken(res.challengeToken);
       if (res.testOtpCode) {
         setTestOtpCode(res.testOtpCode);
       }
@@ -158,7 +160,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
     }
     setOtpLoading(true);
     setErrors({});
-    const res = await verifyMobileOtp(phone, otpInput.trim(), 'seller', ownerName);
+    const res = await verifyMobileOtp(phone, otpInput.trim(), 'seller', ownerName, otpChallengeToken);
     setOtpLoading(false);
 
     if (res.success) {

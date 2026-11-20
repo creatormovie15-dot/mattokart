@@ -19,6 +19,11 @@
   scrollbar-width: none;
 }
 
+.below-fold-section {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 360px;
+}
+
 /* Suppress any Netlify edge-injected badge or drawer iframes */
 iframe[src*="netlify.com"],
 iframe[title*="Netlify"],

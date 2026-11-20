@@ -1,1 +1,4 @@
-/*    /index.html   200
+/api/auth/send-otp    /.netlify/functions/auth-send-otp    200!
+/api/auth/verify-otp  /.netlify/functions/auth-verify-otp  200!
+/api/*                /.netlify/functions/api/:splat       200!
+/*                    /index.html                          200

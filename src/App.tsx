@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ActiveTab,
@@ -41,26 +41,59 @@ import {
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
 import { MobileNav } from './components/MobileNav';
-import { LocationModal } from './components/LocationModal';
-import { ProductDetailModal } from './components/ProductDetailModal';
-import { EnquiryModal } from './components/EnquiryModal';
-import { AuthModal } from './components/AuthModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
-
 import { HomeView } from './views/HomeView';
-import { CatalogView } from './views/CatalogView';
-import { ShopsView } from './views/ShopsView';
-import { SellerRegisterView } from './views/SellerRegisterView';
-import { SellerDashboardView } from './views/SellerDashboardView';
-import { AdminDashboardView } from './views/AdminDashboardView';
-import { EnquiriesView } from './views/EnquiriesView';
-import { LegalView } from './views/LegalView';
-import { CartView } from './views/CartView';
-import { CheckoutView, PlaceOrderPayload } from './views/CheckoutView';
-import { OrdersView } from './views/OrdersView';
-import { WishlistView } from './views/WishlistView';
+import type { PlaceOrderPayload } from './views/CheckoutView';
+import { getRouteSeoMeta, applyDocumentSeo } from './utils/seo';
 import { isSupabaseConfigured } from './lib/supabaseClient';
+
+const LocationModal = lazy(() =>
+  import('./components/LocationModal').then((m) => ({ default: m.LocationModal }))
+);
+const ProductDetailModal = lazy(() =>
+  import('./components/ProductDetailModal').then((m) => ({ default: m.ProductDetailModal }))
+);
+const EnquiryModal = lazy(() =>
+  import('./components/EnquiryModal').then((m) => ({ default: m.EnquiryModal }))
+);
+const AuthModal = lazy(() =>
+  import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
+);
+const CatalogView = lazy(() =>
+  import('./views/CatalogView').then((m) => ({ default: m.CatalogView }))
+);
+const ShopsView = lazy(() =>
+  import('./views/ShopsView').then((m) => ({ default: m.ShopsView }))
+);
+const SellerRegisterView = lazy(() =>
+  import('./views/SellerRegisterView').then((m) => ({ default: m.SellerRegisterView }))
+);
+const SellerDashboardView = lazy(() =>
+  import('./views/SellerDashboardView').then((m) => ({ default: m.SellerDashboardView }))
+);
+const AdminDashboardView = lazy(() =>
+  import('./views/AdminDashboardView').then((m) => ({ default: m.AdminDashboardView }))
+);
+const EnquiriesView = lazy(() =>
+  import('./views/EnquiriesView').then((m) => ({ default: m.EnquiriesView }))
+);
+const LegalView = lazy(() =>
+  import('./views/LegalView').then((m) => ({ default: m.LegalView }))
+);
+const CartView = lazy(() =>
+  import('./views/CartView').then((m) => ({ default: m.CartView }))
+);
+const CheckoutView = lazy(() =>
+  import('./views/CheckoutView').then((m) => ({ default: m.CheckoutView }))
+);
+const OrdersView = lazy(() =>
+  import('./views/OrdersView').then((m) => ({ default: m.OrdersView }))
+);
+const WishlistView = lazy(() =>
+  import('./views/WishlistView').then((m) => ({ default: m.WishlistView }))
+);
 import {
   getCategoriesFromSupabase,
   getProductsFromSupabase,
@@ -183,6 +216,12 @@ export default function App() {
       setActiveLegalDoc('terms');
     }
   }, [location.pathname, location.search]);
+
+  // Synchronize document SEO metadata per route (title, description, canonical, robots)
+  useEffect(() => {
+    const seoMeta = getRouteSeoMeta(location.pathname, location.search, activeLegalDoc);
+    applyDocumentSeo(seoMeta);
+  }, [location.pathname, location.search, activeLegalDoc]);
 
   // Marketplace data state (restored with safe fallback to initial Saharanpur data)
   const [categories, setCategories] = useState<Category[]>(() =>
@@ -1429,6 +1468,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col text-slate-900 selection:bg-orange-500 selection:text-white">
+      {/* Offline Network Status Indicator */}
+      <OfflineIndicator />
+
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
 
@@ -1453,6 +1495,16 @@ export default function App() {
       {/* Body Views */}
       <main className="flex-1">
         <ErrorBoundary fallbackTitle="Marketplace screen recovery">
+          <Suspense
+            fallback={
+              <div className="max-w-[1400px] mx-auto px-4 py-12 flex items-center justify-center">
+                <div className="flex items-center gap-2.5 text-sm font-semibold text-slate-600">
+                  <span className="w-4 h-4 rounded-full border-2 border-[#091e3a] border-t-transparent animate-spin" />
+                  <span>Loading MattoKart...</span>
+                </div>
+              </div>
+            }
+          >
           {activeTab === 'home' && (
             <HomeView
               categories={categories}
@@ -1664,6 +1716,7 @@ export default function App() {
           )}
 
           {activeTab === 'legal' && <LegalView initialDoc={activeLegalDoc} />}
+          </Suspense>
         </ErrorBoundary>
       </main>
 
@@ -1683,55 +1736,62 @@ export default function App() {
         cartCount={cartCount}
       />
 
-      {/* Location Selector Modal */}
-      <LocationModal
-        isOpen={isLocationModalOpen}
-        onClose={() => setIsLocationModalOpen(false)}
-        selectedLocality={selectedLocality}
-        onSelectLocality={(loc) => {
-          setSelectedLocality(loc);
-          safeSave('locality', loc);
-          addToast('info', 'Location Updated', `Delivery location set to ${loc.name} (${loc.pinCode})`);
-        }}
-      />
-
-      {/* Product Detail Modal with Reviews & Wishlist */}
-      <ProductDetailModal
-        product={selectedProductForDetail}
-        onClose={() => setSelectedProductForDetail(null)}
-        onOpenEnquiry={(p) => setSelectedProductForEnquiry(p)}
-        onAddToCart={handleAddToCart}
-        onBuyNow={handleBuyNow}
-        isWishlisted={selectedProductForDetail ? wishlist.includes(selectedProductForDetail.id) : false}
-        onToggleWishlist={handleToggleWishlist}
-        reviews={productReviews.filter((r) => r.productId === selectedProductForDetail?.id)}
-        onAddReview={handleAddReview}
-        relatedProducts={products.filter(
-          (p) =>
-            p.categoryId === selectedProductForDetail?.categoryId &&
-            p.id !== selectedProductForDetail?.id
+      {/* Lazy-Loaded Interactive Modals (only loaded on demand) */}
+      <Suspense fallback={null}>
+        {isLocationModalOpen && (
+          <LocationModal
+            isOpen={isLocationModalOpen}
+            onClose={() => setIsLocationModalOpen(false)}
+            selectedLocality={selectedLocality}
+            onSelectLocality={(loc) => {
+              setSelectedLocality(loc);
+              safeSave('locality', loc);
+              addToast('info', 'Location Updated', `Delivery location set to ${loc.name} (${loc.pinCode})`);
+            }}
+          />
         )}
-        allProducts={products}
-        selectedLocality={selectedLocality}
-        onSelectProduct={handleViewProductDetail}
-      />
 
-      {/* Direct Buyer Enquiry Modal */}
-      <EnquiryModal
-        product={selectedProductForEnquiry}
-        isOpen={!!selectedProductForEnquiry}
-        onClose={() => setSelectedProductForEnquiry(null)}
-        onSubmitEnquiry={handleSubmitEnquiry}
-        currentLocality={selectedLocality}
-      />
+        {selectedProductForDetail && (
+          <ProductDetailModal
+            product={selectedProductForDetail}
+            onClose={() => setSelectedProductForDetail(null)}
+            onOpenEnquiry={(p) => setSelectedProductForEnquiry(p)}
+            onAddToCart={handleAddToCart}
+            onBuyNow={handleBuyNow}
+            isWishlisted={wishlist.includes(selectedProductForDetail.id)}
+            onToggleWishlist={handleToggleWishlist}
+            reviews={productReviews.filter((r) => r.productId === selectedProductForDetail.id)}
+            onAddReview={handleAddReview}
+            relatedProducts={products.filter(
+              (p) =>
+                p.categoryId === selectedProductForDetail.categoryId &&
+                p.id !== selectedProductForDetail.id
+            )}
+            allProducts={products}
+            selectedLocality={selectedLocality}
+            onSelectProduct={handleViewProductDetail}
+          />
+        )}
 
-      {/* Indian Mobile OTP Login / Register Modal */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onSuccess={handleAuthSuccess}
-        initialRole={authModalRole}
-      />
+        {selectedProductForEnquiry && (
+          <EnquiryModal
+            product={selectedProductForEnquiry}
+            isOpen={!!selectedProductForEnquiry}
+            onClose={() => setSelectedProductForEnquiry(null)}
+            onSubmitEnquiry={handleSubmitEnquiry}
+            currentLocality={selectedLocality}
+          />
+        )}
+
+        {isAuthModalOpen && (
+          <AuthModal
+            isOpen={isAuthModalOpen}
+            onClose={() => setIsAuthModalOpen(false)}
+            onSuccess={handleAuthSuccess}
+            initialRole={authModalRole}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

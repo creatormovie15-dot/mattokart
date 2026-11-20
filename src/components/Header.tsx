@@ -19,6 +19,7 @@ import {
   Sun,
 } from 'lucide-react';
 import { ActiveTab, SaharanpurLocality, AuthUser, UserRole, CategoryId } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   activeTab?: ActiveTab;
@@ -140,47 +141,52 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Right Utility Links */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0 text-slate-200">
+            <PWAInstallButton variant="header" />
+
             <a
               href="https://wa.me/918221077674"
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden md:inline hover:text-orange-400 transition-colors whitespace-nowrap"
+              className="hidden md:inline hover:text-orange-300 transition-colors whitespace-nowrap"
             >
               Help
             </a>
-            <span className="text-slate-600 hidden md:inline">|</span>
+            <span className="text-slate-500 hidden md:inline" aria-hidden="true">|</span>
 
             <button
               type="button"
               onClick={() => handleNav('/orders', 'orders')}
-              className="hidden sm:inline hover:text-orange-400 transition-colors cursor-pointer whitespace-nowrap"
+              className="hidden sm:inline hover:text-orange-300 transition-colors cursor-pointer whitespace-nowrap"
             >
               Track Order
             </button>
-            <span className="text-slate-600 hidden sm:inline">|</span>
+            <span className="text-slate-500 hidden sm:inline" aria-hidden="true">|</span>
 
             <button
               type="button"
               onClick={() => handleNav('/seller/register', 'seller-register')}
-              className="text-slate-100 hover:text-orange-400 font-medium cursor-pointer whitespace-nowrap"
+              className="text-slate-100 hover:text-orange-300 font-medium cursor-pointer whitespace-nowrap"
             >
               Become a Seller
             </button>
-            <span className="text-slate-600">|</span>
+            <span className="text-slate-500" aria-hidden="true">|</span>
 
             {/* Login / Register / Account Dropdown */}
             <div className="relative" ref={accountRef}>
               <button
                 type="button"
                 onClick={() => setAccountMenuOpen(!accountMenuOpen)}
-                className="flex items-center gap-1 hover:text-orange-400 font-medium cursor-pointer whitespace-nowrap"
+                aria-expanded={accountMenuOpen}
+                aria-haspopup="menu"
+                aria-label="Account and role menu"
+                className="flex items-center gap-1 hover:text-orange-300 font-medium cursor-pointer whitespace-nowrap"
               >
                 <span>
                   {currentUser
                     ? `Hi, ${currentUser.fullName?.split(' ')[0] || 'User'}`
                     : 'Login / Register'}
                 </span>
-                <ChevronDown className="w-3 h-3 text-slate-400" />
+                <ChevronDown className="w-3 h-3 text-slate-300" aria-hidden="true" />
               </button>
 
               {accountMenuOpen && (
@@ -214,11 +220,11 @@ export const Header: React.FC<HeaderProps> = ({
                           setAccountMenuOpen(false);
                           if (onOpenAuthModal) onOpenAuthModal('customer');
                         }}
-                        className="w-full py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-lg shadow-sm transition-colors cursor-pointer"
+                        className="w-full py-2 bg-[#c2410c] hover:bg-[#9a3412] text-white font-bold text-xs rounded-lg shadow-sm transition-colors cursor-pointer"
                       >
                         Login / Register via Mobile OTP
                       </button>
-                      <div className="text-[11px] text-slate-500 mt-1.5">
+                      <div className="text-[11px] text-slate-600 mt-1.5">
                         Shop verified sellers across India
                       </div>
                     </div>
@@ -322,44 +328,48 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-2.5">
         <div className="flex items-center justify-between gap-3 md:gap-5">
           {/* Brand Logo */}
-          <div
+          <button
+            type="button"
             onClick={() => handleNav('/', 'home')}
-            className="flex items-center gap-2.5 cursor-pointer shrink-0 group py-0.5"
+            className="flex items-center gap-2.5 cursor-pointer shrink-0 group py-0.5 text-left"
+            aria-label="MattoKart Home - Sab Kuch, Ek Hi Jagah!"
             title="MattoKart - Sab Kuch, Ek Hi Jagah!"
           >
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-tr from-[#f97316] to-amber-500 text-white flex items-center justify-center font-black text-xl shadow-md">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg bg-gradient-to-tr from-[#ea580c] to-amber-500 text-white flex items-center justify-center font-black text-xl shadow-md" aria-hidden="true">
               M
             </div>
             <div className="flex flex-col leading-none">
               <span className="font-extrabold text-xl sm:text-2xl tracking-tight text-white font-brand">
-                Matto<span className="text-[#f97316]">Kart</span>
+                Matto<span className="text-orange-400">Kart</span>
               </span>
               <span className="text-[10px] font-medium text-slate-200 tracking-wide hidden sm:block mt-0.5">
                 Sab Kuch, Ek Hi Jagah!
               </span>
             </div>
-          </div>
+          </button>
 
           {/* Large White Search Bar */}
           <form
             onSubmit={handleSearchSubmit}
+            role="search"
             className="flex-1 max-w-3xl relative flex items-center"
           >
             <div className="flex w-full rounded-md overflow-hidden focus-within:ring-2 focus-within:ring-orange-400 bg-white shadow-sm">
               <input
-                type="text"
+                type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search across India for products, brands, shops and cities"
                 placeholder="Search across India for products, brands, shops & cities..."
-                className="flex-1 px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none min-w-0"
+                className="flex-1 px-3.5 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none min-w-0"
               />
 
               <button
                 type="submit"
                 aria-label="Search products"
-                className="bg-[#f97316] hover:bg-orange-600 px-4 sm:px-5 text-white font-bold transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                className="bg-[#c2410c] hover:bg-[#9a3412] px-4 sm:px-5 text-white font-bold transition-colors flex items-center justify-center cursor-pointer shrink-0"
               >
-                <Search className="w-4 h-4 sm:w-5 sm:h-5" />
+                <Search className="w-4 h-4 sm:w-5 sm:h-5" aria-hidden="true" />
               </button>
             </div>
           </form>
@@ -370,6 +380,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={() => handleNav('/wishlist', 'wishlist')}
+              aria-label={`Saved Wishlist (${wishlistCount} items)`}
               className="flex flex-col items-center justify-center text-white hover:text-orange-300 transition-colors cursor-pointer group"
               title="Saved Wishlist"
             >
@@ -378,9 +389,10 @@ export const Header: React.FC<HeaderProps> = ({
                   className={`w-5 h-5 sm:w-5 sm:h-5 ${
                     isWishlist ? 'text-red-400 fill-red-400' : 'text-white group-hover:text-orange-300'
                   }`}
+                  aria-hidden="true"
                 />
                 {wishlistCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 bg-red-600 text-white text-[9px] font-bold min-w-4 h-4 px-1 rounded-full flex items-center justify-center tabular-nums shadow-xs">
+                  <span className="absolute -top-1.5 -right-2 bg-red-700 text-white text-[9px] font-bold min-w-4 h-4 px-1 rounded-full flex items-center justify-center tabular-nums shadow-xs">
                     {wishlistCount}
                   </span>
                 )}
@@ -394,13 +406,14 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={() => handleNav('/cart', 'cart')}
+              aria-label={`Shopping Cart (${cartCount} items)`}
               className="flex flex-col items-center justify-center text-white hover:text-orange-300 transition-colors cursor-pointer group"
               title="Shopping Cart"
             >
               <div className="relative">
-                <ShoppingCart className="w-5 h-5 sm:w-5 sm:h-5 text-white group-hover:text-orange-300" />
+                <ShoppingCart className="w-5 h-5 sm:w-5 sm:h-5 text-white group-hover:text-orange-300" aria-hidden="true" />
                 {cartCount > 0 && (
-                  <span className="absolute -top-1.5 -right-2 bg-red-600 text-white text-[9px] font-bold min-w-4 h-4 px-1 rounded-full flex items-center justify-center tabular-nums shadow-xs">
+                  <span className="absolute -top-1.5 -right-2 bg-red-700 text-white text-[9px] font-bold min-w-4 h-4 px-1 rounded-full flex items-center justify-center tabular-nums shadow-xs">
                     {cartCount}
                   </span>
                 )}
@@ -414,17 +427,18 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-1 text-slate-200 hover:text-white cursor-pointer"
-              aria-label="Open navigation menu"
+              className="md:hidden p-1.5 text-slate-100 hover:text-white cursor-pointer"
+              aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+              aria-expanded={mobileMenuOpen}
             >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              {mobileMenuOpen ? <X className="w-6 h-6" aria-hidden="true" /> : <Menu className="w-6 h-6" aria-hidden="true" />}
             </button>
           </div>
         </div>
       </div>
 
       {/* Horizontal Category Navigation Strip */}
-      <nav className="bg-[#122b4e] text-xs font-medium text-slate-100 px-3 sm:px-4 overflow-x-auto no-scrollbar border-t border-white/10">
+      <nav aria-label="Primary categories" className="bg-[#122b4e] text-xs font-medium text-slate-100 px-3 sm:px-4 overflow-x-auto no-scrollbar border-t border-white/10">
         <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-3 sm:gap-5 py-2 min-w-max">
           <button
             type="button"
@@ -620,6 +634,8 @@ export const Header: React.FC<HeaderProps> = ({
               Admin Portal
             </button>
           </div>
+
+          <PWAInstallButton variant="mobile-drawer" />
 
           {currentUser && onLogout && (
             <button

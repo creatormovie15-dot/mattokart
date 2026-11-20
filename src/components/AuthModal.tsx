@@ -103,7 +103,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsLoading(true);
     setError(null);
 
-    const res = await verifyMobileOtp(phone, otp.trim(), role, fullName);
+    const res = await verifyMobileOtp(
+      phone,
+      otp.trim(),
+      role,
+      fullName,
+      otpResponse?.challengeToken
+    );
     setIsLoading(false);
 
     if (res.success && res.user) {

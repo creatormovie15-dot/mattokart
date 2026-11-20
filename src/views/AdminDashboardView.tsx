@@ -167,9 +167,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     checkAdminSession().then((valid) => {
       if (valid) setIsAuthenticated(true);
     });
-    fetch('/api/system/status')
-      .then((res) => res.json())
-      .then((data) => setSystemStatus(data))
+    fetch('/api/system/status', { headers: { Accept: 'application/json' } })
+      .then(async (res) => {
+        const contentType = res.headers.get('content-type') || '';
+        if (!res.ok || !contentType.includes('application/json')) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (data) setSystemStatus(data);
+      })
       .catch(() => {});
   }, []);
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Heart, ShoppingCart, Trash2, ArrowRight, Store, ArrowLeft } from 'lucide-react';
 import { Product } from '../types';
+import { OptimizedImage } from '../utils/imageOptimizer';
 
 interface WishlistViewProps {
   wishlistIds: string[];
@@ -87,16 +88,20 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
                 className="h-28 sm:h-32 rounded bg-white border border-slate-100 overflow-hidden cursor-pointer p-2 flex items-center justify-center relative"
                 onClick={() => onViewProductDetails(product)}
               >
-                <img
+                <OptimizedImage
                   src={(product.images && product.images[0]) || fallbackImg}
+                  fallbackSrc={fallbackImg}
                   alt={product.name}
-                  referrerPolicy="no-referrer"
+                  widths={[160, 320]}
+                  sizes="(max-width: 640px) 44vw, 220px"
+                  width={200}
+                  height={128}
                   className="max-h-full max-w-full object-contain hover:scale-105 transition-transform"
                 />
               </div>
 
               <div className="space-y-1">
-                <div className="text-[10px] text-slate-400 uppercase font-bold truncate">
+                <div className="text-[10px] text-slate-600 uppercase font-bold truncate">
                   {product.subcategory}
                 </div>
                 <h3

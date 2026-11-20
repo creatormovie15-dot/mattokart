@@ -19,6 +19,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Order, OrderStatus } from '../types';
+import { OptimizedImage } from '../utils/imageOptimizer';
 
 interface OrdersViewProps {
   orders: Order[];
@@ -540,11 +541,18 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
                     {order.items.map((item) => (
                       <div key={item.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
                         <div className="flex items-center gap-3">
-                          <img
-                            src={item.productImage || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80'}
-                            alt={item.productName}
-                            className="w-16 h-16 rounded-lg object-contain bg-slate-50 border border-slate-200 shrink-0"
-                          />
+                          <div className="w-16 h-16 rounded-lg overflow-hidden bg-slate-50 border border-slate-200 shrink-0">
+                            <OptimizedImage
+                              src={item.productImage || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80'}
+                              fallbackSrc="https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=400&q=80"
+                              alt={item.productName}
+                              widths={[96, 160]}
+                              sizes="64px"
+                              width={64}
+                              height={64}
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
                           <div className="space-y-1">
                             <h4 className="font-bold text-slate-900 text-sm leading-snug">
                               {item.productName}

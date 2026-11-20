@@ -3,6 +3,13 @@ import path from 'path';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
+import {
+  getSmsProviderStatus,
+  handleSendOtp,
+  handleVerifyOtp,
+  revokeUserToken,
+  verifySignedUserToken,
+} from './server/otpService';
 
 dotenv.config();
 
@@ -13,6 +20,16 @@ const projectRoot = process.cwd();
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  if (err && req.path.startsWith('/api/')) {
+    res.status(err.status || 400).json({
+      success: false,
+      error: err.message || 'Invalid JSON request payload.',
+    });
+    return;
+  }
+  next(err);
+});
 
 // ============================================================================
 // IN-MEMORY SECURITY STORES & RATE LIMITING
@@ -206,204 +223,62 @@ function validateIndianPhoneNumber(rawPhone: string): { isValid: boolean; format
 // API ROUTES: AUTHENTICATION & MOBILE OTP
 // ============================================================================
 
-// 1. Send OTP
-app.post('/api/auth/send-otp', checkOtpRateLimit, async (req: Request, res: Response) => {
+// 1. Send OTP (Real SMS / Auth provider only — never fake OTPs)
+app.post('/api/auth/send-otp', async (req: Request, res: Response) => {
   try {
-    const { phone: rawPhone, role = 'customer', fullName } = req.body;
-    const phoneCheck = validateIndianPhoneNumber(String(rawPhone));
-
-    if (!phoneCheck.isValid) {
-      res.status(400).json({ success: false, error: phoneCheck.error });
-      return;
-    }
-
-    const cleanPhone = phoneCheck.cleanDigits;
-    const internationalPhone = `+91${cleanPhone}`;
-
-    // Generate a secure 6-digit numeric OTP code
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes validity
-
-    pendingOtpSessions.set(cleanPhone, {
-      code: otpCode,
-      phone: internationalPhone,
-      role: role === 'seller' ? 'seller' : 'customer',
-      fullName: fullName ? String(fullName).trim() : undefined,
-      expiresAt,
-      failedAttempts: 0,
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    const result = await handleSendOtp({
+      phone: req.body?.phone,
+      role: req.body?.role,
+      fullName: req.body?.fullName,
+      clientIp,
     });
-
-    // Check if real SMS Provider credentials are configured
-    const hasTwilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER);
-    const hasMsg91 = Boolean(process.env.MSG91_AUTH_KEY);
-    const hasSupabaseService = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.VITE_SUPABASE_URL);
-
-    const providerConfigured = hasTwilio || hasMsg91 || hasSupabaseService;
-
-    if (providerConfigured) {
-      // In production with credentials, dispatch via provider
-      // (Twilio / MSG91 API call)
-      console.log(`[SMS-DISPATCH] Live SMS dispatched to ${internationalPhone}`);
-      res.json({
-        success: true,
-        providerConfigured: true,
-        formattedPhone: phoneCheck.formatted,
-        message: `OTP sent via SMS to ${phoneCheck.formatted}`,
-        cooldownSeconds: 60,
-        expiresInSeconds: 300,
-      });
-    } else {
-      if (isProduction) {
-        // SECURITY REQUIREMENT 4 & 5:
-        // Disable demo OTP codes in production responses.
-        // If real SMS credentials are missing in production, fail safely instead of allowing demo authentication.
-        console.warn(`[AUTH-PRODUCTION-ALERT] SMS request to ${internationalPhone} rejected: Live SMS credentials not configured in production.`);
-        res.status(503).json({
-          success: false,
-          providerConfigured: false,
-          error: 'SMS service is unavailable: Live SMS gateway credentials (TWILIO or MSG91) are not configured in production.',
-          message: 'Live SMS provider required in production.',
-        });
-        return;
-      }
-
-      // Development Sandbox mode ONLY (Never executed in production)
-      console.log(`[AUTH-SANDBOX] [DEV-ONLY] OTP generated for ${internationalPhone}: [${otpCode}]`);
-      res.json({
-        success: true,
-        providerConfigured: false,
-        sandboxMode: true,
-        formattedPhone: phoneCheck.formatted,
-        message: `Live SMS provider not configured in environment. Local developer test code generated.`,
-        developerNotice: `To enable live SMS delivery across India, configure TWILIO_ACCOUNT_SID or MSG91_AUTH_KEY in .env.`,
-        testOtpCode: otpCode, // Only returned in non-production local development
-        cooldownSeconds: 60,
-        expiresInSeconds: 300,
-      });
-    }
+    res.status(result.httpStatus).json(result.body);
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Internal server error while dispatching OTP' });
+    res.status(500).json({
+      success: false,
+      providerConfigured: false,
+      error: err?.message || 'Internal server error while dispatching OTP.',
+    });
   }
 });
 
 // 2. Verify OTP
 app.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
   try {
-    const { phone: rawPhone, otp: inputOtp, fullName, role = 'customer' } = req.body;
-    const phoneCheck = validateIndianPhoneNumber(String(rawPhone));
-
-    if (!phoneCheck.isValid) {
-      res.status(400).json({ success: false, error: phoneCheck.error });
-      return;
-    }
-
-    const hasTwilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER);
-    const hasMsg91 = Boolean(process.env.MSG91_AUTH_KEY);
-    const hasSupabaseService = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.VITE_SUPABASE_URL);
-    const providerConfigured = hasTwilio || hasMsg91 || hasSupabaseService;
-
-    if (isProduction && !providerConfigured) {
-      res.status(503).json({
-        success: false,
-        error: 'Authentication is unavailable: Live SMS gateway credentials must be configured in production.',
-      });
-      return;
-    }
-
-    const cleanPhone = phoneCheck.cleanDigits;
-    const session = pendingOtpSessions.get(cleanPhone);
-
-    if (!session) {
-      res.status(400).json({
-        success: false,
-        error: 'No active OTP request found for this mobile number. Please click "Send OTP".',
-      });
-      return;
-    }
-
-    if (Date.now() > session.expiresAt) {
-      pendingOtpSessions.delete(cleanPhone);
-      res.status(400).json({
-        success: false,
-        error: 'OTP has expired. Please request a new verification code.',
-      });
-      return;
-    }
-
-    if (session.failedAttempts >= 5) {
-      pendingOtpSessions.delete(cleanPhone);
-      res.status(429).json({
-        success: false,
-        error: 'Too many incorrect attempts. This OTP session has been locked for security. Please request a new code.',
-      });
-      return;
-    }
-
-    const cleanInputOtp = String(inputOtp || '').trim();
-
-    if (cleanInputOtp !== session.code) {
-      session.failedAttempts += 1;
-      const remainingAttempts = 5 - session.failedAttempts;
-      res.status(400).json({
-        success: false,
-        error: `Incorrect OTP code. ${remainingAttempts} attempts remaining.`,
-        attemptsRemaining: remainingAttempts,
-      });
-      return;
-    }
-
-    // OTP Verified successfully!
-    pendingOtpSessions.delete(cleanPhone);
-
-    // Create or retrieve user session
-    const userId = `user-${cleanPhone}`;
-    const token = `mkt_${Buffer.from(`${userId}:${Date.now()}`).toString('base64')}`;
-
-    const userRecord = {
-      id: userId,
-      phone: session.phone,
-      fullName: fullName || session.fullName || (role === 'seller' ? 'Saharanpur Dukaandar' : 'MattoKart Customer'),
-      role: (role === 'seller' || session.role === 'seller' ? 'seller' : 'customer') as 'customer' | 'seller' | 'admin',
-      sellerId: role === 'seller' || session.role === 'seller' ? `seller-${cleanPhone}` : undefined,
-      createdAt: Date.now(),
-    };
-
-    userSessions.set(token, userRecord);
-
-    res.json({
-      success: true,
-      user: {
-        id: userRecord.id,
-        phone: userRecord.phone,
-        fullName: userRecord.fullName,
-        role: userRecord.role,
-        sellerId: userRecord.sellerId,
-        token,
-      },
-      message: `Verified successfully! Welcome to MattoKart.`,
+    const result = await handleVerifyOtp({
+      phone: req.body?.phone,
+      otp: req.body?.otp,
+      role: req.body?.role,
+      fullName: req.body?.fullName,
+      challengeToken: req.body?.challengeToken,
     });
+    res.status(result.httpStatus).json(result.body);
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Verification failed' });
+    res.status(500).json({
+      success: false,
+      error: err?.message || 'Verification failed.',
+    });
   }
 });
 
 // 3. Current User Profile
 app.get('/api/auth/me', (req: Request, res: Response) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token || !userSessions.has(token)) {
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim() || '';
+  const user = verifySignedUserToken(token);
+  if (!user) {
     res.status(401).json({ success: false, error: 'Unauthorized: No active session' });
     return;
   }
 
-  const user = userSessions.get(token);
   res.json({ success: true, user });
 });
 
 // 4. Logout
 app.post('/api/auth/logout', (req: Request, res: Response) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim();
   if (token) {
-    userSessions.delete(token);
+    revokeUserToken(token);
   }
   res.json({ success: true, message: 'Logged out successfully' });
 });
@@ -1494,9 +1369,11 @@ app.post('/api/orders/:id/return', (req: Request, res: Response) => {
 
 // System Status Endpoint
 app.get('/api/system/status', (_req: Request, res: Response) => {
-  const hasSupabase = Boolean(process.env.VITE_SUPABASE_URL && process.env.VITE_SUPABASE_PUBLISHABLE_KEY);
-  const hasTwilio = Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN);
-  const hasMsg91 = Boolean(process.env.MSG91_AUTH_KEY);
+  const hasSupabase = Boolean(
+    (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL) &&
+      (process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)
+  );
+  const smsStatus = getSmsProviderStatus();
   const hasKyc = Boolean(process.env.DIGILOCKER_CLIENT_ID || process.env.KYC_PROVIDER_API_KEY);
   const hasRazorpay = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
   const hasShiprocket = Boolean(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD);
@@ -1523,9 +1400,11 @@ app.get('/api/system/status', (_req: Request, res: Response) => {
         note: hasShiprocket ? 'Live Shiprocket active' : 'Scheduled for Stage C (Awaiting Shiprocket API credentials)',
       },
       smsGateway: {
-        configured: hasTwilio || hasMsg91,
-        provider: hasTwilio ? 'Twilio SMS' : hasMsg91 ? 'MSG91' : 'None (Sandbox mode active)',
-        note: hasTwilio || hasMsg91 ? 'Live Indian SMS active' : 'Awaiting SMS credentials (TWILIO / MSG91)',
+        configured: smsStatus.anyConfigured,
+        provider: smsStatus.providerLabel,
+        note: smsStatus.anyConfigured
+          ? `Live Indian SMS configured (${smsStatus.providerLabel})`
+          : 'Awaiting SMS credentials (TWILIO_*, MSG91_*, or Supabase Phone Auth)',
       },
       identityKycProvider: {
         configured: hasKyc,
@@ -1539,6 +1418,14 @@ app.get('/api/system/status', (_req: Request, res: Response) => {
         devKeyHint: !isProduction && !process.env.ADMIN_SECRET_KEY ? DEV_SANDBOX_ADMIN_KEY : undefined,
       },
     },
+  });
+});
+
+// Ensure all unknown /api/* routes ALWAYS return JSON (never fall through to SPA HTML)
+app.all('/api/*', (req: Request, res: Response) => {
+  res.status(404).json({
+    success: false,
+    error: `API endpoint not found: ${req.method} ${req.originalUrl}`,
   });
 });
 

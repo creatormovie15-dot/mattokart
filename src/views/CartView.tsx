@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { CartItem, Product, SaharanpurLocality, AuthUser } from '../types';
 import { calculateMultiVendorCheckoutQuote } from '../data/indiaData';
+import { OptimizedImage } from '../utils/imageOptimizer';
 
 interface CartViewProps {
   cart: CartItem[];
@@ -244,9 +245,14 @@ export const CartView: React.FC<CartViewProps> = ({
                           onClick={() => onViewProductDetails(product)}
                           className="w-20 h-20 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 shrink-0 cursor-pointer"
                         >
-                          <img
+                          <OptimizedImage
                             src={productImg}
+                            fallbackSrc="https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80"
                             alt={product.name}
+                            widths={[120, 200]}
+                            sizes="80px"
+                            width={80}
+                            height={80}
                             className="w-full h-full object-cover hover:scale-105 transition-transform"
                           />
                         </div>

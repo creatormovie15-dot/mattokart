@@ -17,6 +17,7 @@ import { Product, Category, CategoryId, SaharanpurLocality } from '../types';
 import { SAHARANPUR_LOCALITIES } from '../data/mockData';
 import { INDIAN_STATES_UTS } from '../data/indiaData';
 import { ProductCard } from '../components/ProductCard';
+import { OptimizedImage } from '../utils/imageOptimizer';
 
 interface CatalogViewProps {
   products: Product[];
@@ -573,36 +574,39 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                   className="bg-white rounded-2xl border border-slate-200 p-4 hover:border-orange-300 hover:shadow-md transition-all flex flex-col sm:flex-row gap-4 items-center justify-between"
                 >
                   <div className="flex items-center gap-4 w-full sm:w-auto">
-                    <img
-                      src={(product.images && product.images[0]) || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80'}
-                      alt={product.name || 'Product'}
-                      className="w-24 h-24 rounded-xl object-cover shrink-0 cursor-pointer"
-                      loading="lazy"
-                      decoding="async"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        target.src = 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80';
-                      }}
+                    <div
                       onClick={() => onViewProductDetails(product)}
-                    />
+                      className="w-24 h-24 rounded-xl overflow-hidden shrink-0 cursor-pointer bg-slate-50 border border-slate-100"
+                    >
+                      <OptimizedImage
+                        src={(product.images && product.images[0]) || 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80'}
+                        fallbackSrc="https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=600&q=80"
+                        alt={product.name || 'MattoKart Product'}
+                        widths={[120, 240]}
+                        sizes="96px"
+                        width={96}
+                        height={96}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
                     <div className="space-y-1 min-w-0">
-                      <div className="text-[11px] text-slate-400 font-medium">
+                      <div className="text-[11px] text-slate-600 font-medium">
                         {product.subcategory} • per {product.unit}
                       </div>
                       <h3
                         onClick={() => onViewProductDetails(product)}
-                        className="font-bold text-sm text-slate-900 hover:text-orange-600 transition-colors cursor-pointer"
+                        className="font-bold text-sm text-slate-900 hover:text-[#c2410c] transition-colors cursor-pointer"
                       >
                         {product.name}
                       </h3>
-                      <div className="flex items-center gap-3 text-xs text-slate-500">
-                        <span className="flex items-center gap-1 font-semibold text-slate-700">
-                          <Store className="w-3.5 h-3.5 text-orange-600" />
+                      <div className="flex items-center gap-3 text-xs text-slate-600">
+                        <span className="flex items-center gap-1 font-semibold text-slate-800">
+                          <Store className="w-3.5 h-3.5 text-[#c2410c]" aria-hidden="true" />
                           {product.sellerShopName}
                         </span>
-                        <span>•</span>
+                        <span aria-hidden="true">•</span>
                         <span className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
+                          <MapPin className="w-3 h-3" aria-hidden="true" />
                           {product.sellerLocality}
                         </span>
                       </div>
@@ -620,14 +624,16 @@ export const CatalogView: React.FC<CatalogViewProps> = ({
                     </div>
                     <div className="flex gap-2">
                       <button
+                        type="button"
                         onClick={() => onViewProductDetails(product)}
-                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg text-xs"
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-lg text-xs cursor-pointer"
                       >
                         Details
                       </button>
                       <button
+                        type="button"
                         onClick={() => onContactSeller(product)}
-                        className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-lg text-xs"
+                        className="px-3 py-1.5 bg-[#c2410c] hover:bg-[#9a3412] text-white font-semibold rounded-lg text-xs cursor-pointer"
                       >
                         Contact
                       </button>

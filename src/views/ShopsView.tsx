@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Seller, Product } from '../types';
 import { INDIAN_STATES_UTS } from '../data/indiaData';
+import { OptimizedImage } from '../utils/imageOptimizer';
 
 interface ShopsViewProps {
   sellers: Seller[];
@@ -82,8 +83,9 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
           </p>
           <div className="pt-2">
             <button
+              type="button"
               onClick={onGoToSellerRegister}
-              className="px-5 py-2.5 bg-[#f97316] hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
+              className="px-5 py-2.5 bg-[#c2410c] hover:bg-[#9a3412] text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer"
             >
               Register Your Shop Anywhere in India — FREE First Year (₹0)
             </button>
@@ -95,11 +97,12 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="flex flex-col sm:flex-row gap-2.5 w-full sm:w-auto">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" aria-hidden="true" />
             <input
-              type="text"
+              type="search"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Search shops by name, city, state or products"
               placeholder="Search shop, city, state, or products..."
               className="w-full pl-10 pr-4 py-2.5 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
             />
@@ -108,7 +111,8 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
           <select
             value={selectedState}
             onChange={(e) => setSelectedState(e.target.value)}
-            className="px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+            aria-label="Filter shops by Indian state or UT"
+            className="px-3.5 py-2.5 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
           >
             <option value="all">All States &amp; UTs (India)</option>
             {INDIAN_STATES_UTS.map((st) => (
@@ -119,7 +123,7 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
           </select>
         </div>
 
-        <div className="text-xs text-slate-500">
+        <div className="text-xs text-slate-600">
           Showing <strong className="text-slate-900">{filteredSellers.length}</strong> verified sellers
         </div>
       </div>
@@ -144,65 +148,65 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
               <div>
                 {/* Banner image */}
                 <div className="h-28 bg-slate-100 relative overflow-hidden">
-                  <img
+                  <OptimizedImage
                     src={seller.bannerImage || 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=600&q=80'}
-                    alt=""
+                    fallbackSrc="https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=600&q=80"
+                    alt={`${seller.shopName} storefront`}
+                    widths={[320, 480, 640]}
+                    sizes="(max-width: 768px) 92vw, 380px"
+                    width={400}
+                    height={112}
                     className="w-full h-full object-cover"
-                    loading="lazy"
-                    decoding="async"
-                    onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1538688525198-9b88f6f53126?auto=format&fit=crop&w=600&q=80';
-                    }}
                   />
                   <div className="absolute top-2.5 left-2.5 bg-[#091e3a]/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                     {sellerTypeLabel(seller.sellerType)}
                   </div>
-                  <div className="absolute top-2.5 right-2.5 bg-white/95 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Verified Seller
+                  <div className="absolute top-2.5 right-2.5 bg-white/95 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-700" aria-hidden="true" /> Verified Seller
                   </div>
                 </div>
 
                 {/* Profile row */}
                 <div className="px-5 pt-0 pb-4 relative">
                   <div className="-mt-7 mb-3 flex items-end justify-between">
-                    <img
+                    <OptimizedImage
                       src={seller.shopLogo || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'}
-                      alt={seller.shopName}
+                      fallbackSrc="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80"
+                      alt={`${seller.shopName} logo`}
+                      widths={[96, 160]}
+                      sizes="56px"
+                      width={56}
+                      height={56}
                       className="w-14 h-14 rounded-2xl object-cover border-2 border-white shadow-md bg-white"
-                      loading="lazy"
-                      decoding="async"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).src = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80';
-                      }}
                     />
-                    <span className="text-xs font-bold text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-lg">
+                    <span className="text-xs font-bold text-[#c2410c] bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-lg">
                       ★ {seller.rating} ({seller.reviewsCount})
                     </span>
                   </div>
 
                   <div className="space-y-1">
-                    <h3 className="font-bold text-slate-900 text-base leading-snug">
+                    <h2 className="font-bold text-slate-900 text-base leading-snug">
                       {seller.shopName}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Proprietor: <strong className="text-slate-700">{seller.ownerName}</strong>
+                    </h2>
+                    <p className="text-xs text-slate-600">
+                      Proprietor: <strong className="text-slate-800">{seller.ownerName}</strong>
                     </p>
                   </div>
 
-                  <p className="text-xs text-slate-600 line-clamp-3 mt-3 leading-relaxed">
+                  <p className="text-xs text-slate-700 line-clamp-3 mt-3 leading-relaxed">
                     {seller.description}
                   </p>
 
                   {/* Address & Delivery */}
-                  <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs text-slate-500">
+                  <div className="mt-4 pt-3 border-t border-slate-100 space-y-1.5 text-xs text-slate-600">
                     <div className="flex items-start gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-orange-600 shrink-0 mt-0.5" />
+                      <MapPin className="w-3.5 h-3.5 text-[#c2410c] shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="leading-tight">
                         {seller.address}, {seller.city || seller.locality}, {seller.state || 'Uttar Pradesh'} ({seller.pinCode})
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <Truck className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <Truck className="w-3.5 h-3.5 text-slate-500 shrink-0" aria-hidden="true" />
                       <span>
                         {seller.shipsPanIndia
                           ? 'Pan-India Shipping + Local Dispatch'
@@ -220,25 +224,28 @@ export const ShopsView: React.FC<ShopsViewProps> = ({
                     href={whatsappUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-2xs transition-colors"
+                    aria-label={`Chat with ${seller.shopName} on WhatsApp`}
+                    className="p-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl shadow-2xs transition-colors"
                     title="Chat on WhatsApp"
                   >
-                    <MessageCircle className="w-4 h-4" />
+                    <MessageCircle className="w-4 h-4" aria-hidden="true" />
                   </a>
                   <a
                     href={`tel:${cleanPhone}`}
+                    aria-label={`Call ${seller.shopName}`}
                     className="p-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl transition-colors"
                     title="Call Shop"
                   >
-                    <Phone className="w-4 h-4 text-orange-600" />
+                    <Phone className="w-4 h-4 text-[#c2410c]" aria-hidden="true" />
                   </a>
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => onSelectShopProducts(seller.shopName)}
-                  className="px-3.5 py-2 bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5"
+                  className="px-3.5 py-2 bg-[#c2410c] hover:bg-[#9a3412] text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Package className="w-3.5 h-3.5" />
+                  <Package className="w-3.5 h-3.5" aria-hidden="true" />
                   <span>View Products ({shopProductCount})</span>
                 </button>
               </div>

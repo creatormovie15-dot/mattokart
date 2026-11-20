@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Product, ProductReview, SaharanpurLocality } from '../types';
 import { calculateProductShippingQuote } from '../data/indiaData';
+import { OptimizedImage } from '../utils/imageOptimizer';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -175,20 +176,21 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             {/* Left Column: Image Gallery (5 Cols) */}
             <div className="lg:col-span-5 space-y-3">
               <div className="relative aspect-square rounded-xl overflow-hidden bg-slate-50 border border-slate-200 p-4 flex items-center justify-center shadow-inner">
-                <img
+                <OptimizedImage
                   src={safeImg}
+                  fallbackSrc={fallbackImg}
                   alt={product.name}
+                  widths={[400, 720, 960]}
+                  sizes="(max-width: 1024px) 90vw, 480px"
+                  width={480}
+                  height={480}
+                  priority
                   className="w-full h-full object-contain"
-                  loading="lazy"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    if (target.src !== fallbackImg) target.src = fallbackImg;
-                  }}
                 />
 
                 {product.isWoodcraftSpecial && (
                   <div className="absolute top-3 left-3 bg-[#131921] text-amber-300 text-xs font-bold px-2.5 py-1 rounded shadow-md flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Saharanpur GI Craft
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" /> Saharanpur GI Craft
                   </div>
                 )}
 
@@ -196,12 +198,13 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <button
                   type="button"
                   onClick={() => onToggleWishlist && onToggleWishlist(product.id)}
+                  aria-label={isWishlisted ? `Remove ${product.name} from Wishlist` : `Add ${product.name} to Wishlist`}
                   className={`absolute top-3 right-3 w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-all cursor-pointer ${
-                    isWishlisted ? 'bg-red-50 text-red-600' : 'bg-white text-slate-400 hover:text-red-500'
+                    isWishlisted ? 'bg-red-50 text-red-700' : 'bg-white text-slate-600 hover:text-red-700'
                   }`}
                   title={isWishlisted ? 'Remove from Wishlist' : 'Add to Wishlist'}
                 >
-                  <Heart className={`w-5 h-5 ${isWishlisted ? 'fill-red-600 text-red-600' : ''}`} />
+                  <Heart className={`w-5 h-5 ${isWishlisted ? 'fill-red-600 text-red-600' : ''}`} aria-hidden="true" />
                 </button>
               </div>
 
@@ -211,14 +214,25 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                   {images.map((img, idx) => (
                     <button
                       key={idx}
+                      type="button"
                       onClick={() => setActiveImageIndex(idx)}
+                      aria-label={`View image ${idx + 1} of ${product.name}`}
                       className={`w-16 h-16 rounded-lg overflow-hidden border-2 transition-all p-1 bg-white cursor-pointer ${
                         activeImageIndex === idx
-                          ? 'border-orange-500 ring-2 ring-orange-400/40'
-                          : 'border-slate-200 opacity-70 hover:opacity-100'
+                          ? 'border-orange-600 ring-2 ring-orange-400/40'
+                          : 'border-slate-200 opacity-75 hover:opacity-100'
                       }`}
                     >
-                      <img src={img} alt="" className="w-full h-full object-contain" />
+                      <OptimizedImage
+                        src={img}
+                        fallbackSrc={fallbackImg}
+                        alt={`${product.name} view ${idx + 1}`}
+                        widths={[96, 160]}
+                        sizes="64px"
+                        width={64}
+                        height={64}
+                        className="w-full h-full object-contain"
+                      />
                     </button>
                   ))}
                 </div>
@@ -730,15 +744,21 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <h3 className="font-bold text-sm text-slate-900">Similar Products from Verified Indian Sellers</h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {relatedProducts.slice(0, 4).map((rel) => (
-                  <div
+                  <button
                     key={rel.id}
+                    type="button"
                     onClick={() => onSelectProduct && onSelectProduct(rel)}
-                    className="p-2.5 rounded-xl border border-slate-200 hover:border-orange-400 transition-all cursor-pointer bg-white group text-xs space-y-1.5"
+                    className="p-2.5 rounded-xl border border-slate-200 hover:border-orange-400 transition-all cursor-pointer bg-white group text-xs space-y-1.5 text-left"
                   >
                     <div className="aspect-square rounded-lg bg-slate-50 overflow-hidden">
-                      <img
+                      <OptimizedImage
                         src={(rel.images && rel.images[0]) || fallbackImg}
-                        alt=""
+                        fallbackSrc={fallbackImg}
+                        alt={rel.name}
+                        widths={[160, 280]}
+                        sizes="(max-width: 640px) 44vw, 180px"
+                        width={180}
+                        height={180}
                         className="w-full h-full object-contain group-hover:scale-105 transition-transform"
                       />
                     </div>
@@ -746,7 +766,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     <div className="font-extrabold text-slate-900">
                       ₹{new Intl.NumberFormat('en-IN').format(rel.price)}
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>

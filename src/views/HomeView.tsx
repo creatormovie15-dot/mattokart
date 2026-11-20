@@ -34,8 +34,7 @@ import {
 } from 'lucide-react';
 import { Category, Product, Seller, SaharanpurLocality, CategoryId } from '../types';
 import { ProductCard } from '../components/ProductCard';
-import heroConstructionImg from '../assets/images/hero_construction_supply_1794588733284.jpg';
-import promoWoodcraftImg from '../assets/images/promo_woodcraft_showcase_1794588733421.jpg';
+import { OptimizedImage } from '../utils/imageOptimizer';
 
 interface HomeViewProps {
   categories: Category[];
@@ -111,7 +110,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
       subtitle: 'Premium Construction Materials at Best Prices',
       ctaText: 'Shop Now',
       action: () => onSelectCategory('construction'),
-      bannerImg: heroConstructionImg,
+      avifSrcSet: '/images/hero-construction-640.avif 640w, /images/hero-construction-1120.avif 1120w',
+      webpSrcSet: '/images/hero-construction-640.webp 640w, /images/hero-construction-1120.webp 1120w',
+      fallbackImg: '/images/hero-construction-1120.jpg',
     },
     {
       id: 2,
@@ -120,7 +121,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
       subtitle: 'Saharanpur GI Mandirs & Carved Furniture Direct',
       ctaText: 'Explore Woodcraft',
       action: () => onSelectCategory('furniture'),
-      bannerImg: promoWoodcraftImg,
+      avifSrcSet: '/images/hero-woodcraft-640.avif 640w, /images/hero-woodcraft-1120.avif 1120w',
+      webpSrcSet: '/images/hero-woodcraft-640.webp 640w, /images/hero-woodcraft-1120.webp 1120w',
+      fallbackImg: '/images/hero-woodcraft-1120.jpg',
     },
   ];
 
@@ -263,21 +266,38 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="flex flex-col gap-3 min-w-0">
             {/* Construction Hero Banner (Bright Left Headline + Right Depot Photo) */}
             <div className="relative rounded-xl overflow-hidden bg-gradient-to-r from-white via-sky-50 to-sky-100 shadow-xs border border-slate-200 min-h-[240px] sm:min-h-[290px] lg:min-h-[310px] flex items-center">
-              <img
-                src={activeBanner.bannerImg}
-                alt={`${activeBanner.line1} ${activeBanner.line2}`}
-                className="absolute inset-0 w-full h-full object-cover object-right transition-opacity duration-500"
-              />
+              <picture className="contents">
+                <source
+                  type="image/avif"
+                  srcSet={activeBanner.avifSrcSet}
+                  sizes="(max-width: 1024px) 100vw, 1120px"
+                />
+                <source
+                  type="image/webp"
+                  srcSet={activeBanner.webpSrcSet}
+                  sizes="(max-width: 1024px) 100vw, 1120px"
+                />
+                <img
+                  src={activeBanner.fallbackImg}
+                  alt={`${activeBanner.line1} ${activeBanner.line2} - ${activeBanner.subtitle}`}
+                  width={1120}
+                  height={625}
+                  loading={currentBannerIndex === 0 ? 'eager' : 'lazy'}
+                  decoding={currentBannerIndex === 0 ? 'sync' : 'async'}
+                  fetchPriority={currentBannerIndex === 0 ? 'high' : 'auto'}
+                  className="absolute inset-0 w-full h-full object-cover object-right transition-opacity duration-500"
+                />
+              </picture>
               {/* Bright Left-to-Right Sky/White Scrim matching Reference */}
               <div className="absolute inset-0 bg-gradient-to-r from-white via-white/90 sm:via-sky-50/85 to-transparent" />
 
               <div className="relative z-10 px-6 sm:px-10 py-7 max-w-xl space-y-2.5 sm:space-y-3">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-[#f97316]">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-[#c2410c]">
                   India Ka Apna Shopping Marketplace · Buy Anywhere. Sell Everywhere.
                 </div>
                 <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-black font-brand leading-[1.05] tracking-tight">
                   <span className="block text-[#091e3a]">{activeBanner.line1}</span>
-                  <span className="block text-[#f97316]">{activeBanner.line2}</span>
+                  <span className="block text-[#c2410c]">{activeBanner.line2}</span>
                 </h1>
 
                 <p className="text-[#091e3a] font-bold text-sm sm:text-base max-w-md leading-snug">
@@ -288,10 +308,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   <button
                     type="button"
                     onClick={activeBanner.action}
-                    className="px-5 py-2.5 rounded-lg bg-[#f97316] hover:bg-orange-600 text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer whitespace-nowrap"
+                    className="px-5 py-2.5 rounded-lg bg-[#c2410c] hover:bg-[#9a3412] text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer whitespace-nowrap"
                   >
                     <span>{activeBanner.ctaText}</span>
-                    <ArrowRight className="w-4 h-4" />
+                    <ArrowRight className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -303,9 +323,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   setCurrentBannerIndex((prev) => (prev === 0 ? heroBanners.length - 1 : prev - 1))
                 }
                 aria-label="Previous hero slide"
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#091e3a]/80 hover:bg-[#091e3a] text-white flex items-center justify-center transition-colors cursor-pointer z-20"
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#091e3a]/85 hover:bg-[#091e3a] text-white flex items-center justify-center transition-colors cursor-pointer z-20"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-4 h-4" aria-hidden="true" />
               </button>
               <button
                 type="button"
@@ -313,23 +333,28 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   setCurrentBannerIndex((prev) => (prev + 1) % heroBanners.length)
                 }
                 aria-label="Next hero slide"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#091e3a]/80 hover:bg-[#091e3a] text-white flex items-center justify-center transition-colors cursor-pointer z-20"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#091e3a]/85 hover:bg-[#091e3a] text-white flex items-center justify-center transition-colors cursor-pointer z-20"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
               </button>
 
               {/* Center Bottom Indicator Dots */}
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20">
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 z-20">
                 {heroBanners.map((_, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => setCurrentBannerIndex(idx)}
-                    aria-label={`Slide ${idx + 1}`}
-                    className={`h-2.5 rounded-full transition-all cursor-pointer border border-white/60 ${
-                      currentBannerIndex === idx ? 'w-2.5 bg-[#f97316]' : 'w-2.5 bg-white/80'
-                    }`}
-                  />
+                    aria-label={`Go to slide ${idx + 1}`}
+                    aria-pressed={currentBannerIndex === idx}
+                    className="w-6 h-6 flex items-center justify-center cursor-pointer"
+                  >
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full transition-all border border-white/80 ${
+                        currentBannerIndex === idx ? 'bg-[#c2410c]' : 'bg-white/90'
+                      }`}
+                    />
+                  </button>
                 ))}
               </div>
             </div>
@@ -341,12 +366,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 onClick={onOpenLocationModal}
                 className="flex items-center gap-2.5 text-left hover:bg-slate-50 p-1 rounded-lg transition-colors cursor-pointer"
               >
-                <div className="w-8 h-8 rounded-lg bg-sky-50 text-[#091e3a] flex items-center justify-center shrink-0">
-                  <Truck className="w-4 h-4 text-[#f97316]" />
+                <div className="w-8 h-8 rounded-lg bg-sky-50 text-[#c2410c] flex items-center justify-center shrink-0">
+                  <Truck className="w-4 h-4" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 leading-tight">
                   <div className="text-xs font-bold text-slate-900 truncate">Fast Delivery</div>
-                  <div className="text-[10px] text-slate-500 truncate">
+                  <div className="text-[10px] text-slate-600 truncate">
                     Across India &amp; {selectedLocality.city || selectedLocality.name}
                   </div>
                 </div>
@@ -357,12 +382,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 onClick={onGoToCatalog}
                 className="flex items-center gap-2.5 text-left hover:bg-slate-50 p-1 rounded-lg transition-colors cursor-pointer"
               >
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-                  <ShieldCheck className="w-4 h-4" />
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-800 flex items-center justify-center shrink-0">
+                  <ShieldCheck className="w-4 h-4" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 leading-tight">
                   <div className="text-xs font-bold text-slate-900 truncate">Secure Payments</div>
-                  <div className="text-[10px] text-slate-500 truncate">Cash on Delivery</div>
+                  <div className="text-[10px] text-slate-600 truncate">Cash on Delivery</div>
                 </div>
               </button>
 
@@ -371,12 +396,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 onClick={onGoToCatalog}
                 className="flex items-center gap-2.5 text-left hover:bg-slate-50 p-1 rounded-lg transition-colors cursor-pointer"
               >
-                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                  <RotateCcw className="w-4 h-4" />
+                <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-800 flex items-center justify-center shrink-0">
+                  <RotateCcw className="w-4 h-4" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 leading-tight">
                   <div className="text-xs font-bold text-slate-900 truncate">Easy Returns</div>
-                  <div className="text-[10px] text-slate-500 truncate">7 Days Policy</div>
+                  <div className="text-[10px] text-slate-600 truncate">7 Days Policy</div>
                 </div>
               </button>
 
@@ -387,11 +412,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 className="flex items-center gap-2.5 text-left hover:bg-slate-50 p-1 rounded-lg transition-colors"
               >
                 <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#091e3a] flex items-center justify-center shrink-0">
-                  <Headphones className="w-4 h-4" />
+                  <Headphones className="w-4 h-4" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 leading-tight">
                   <div className="text-xs font-bold text-slate-900 truncate">24x7 Customer</div>
-                  <div className="text-[10px] text-slate-500 truncate">Support</div>
+                  <div className="text-[10px] text-slate-600 truncate">Support</div>
                 </div>
               </a>
 
@@ -400,12 +425,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 onClick={onGoToShops || onGoToCatalog}
                 className="col-span-2 sm:col-span-1 flex items-center gap-2.5 text-left hover:bg-slate-50 p-1 rounded-lg transition-colors cursor-pointer"
               >
-                <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#f97316] flex items-center justify-center shrink-0">
-                  <Store className="w-4 h-4" />
+                <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#c2410c] flex items-center justify-center shrink-0">
+                  <Store className="w-4 h-4" aria-hidden="true" />
                 </div>
                 <div className="min-w-0 leading-tight">
                   <div className="text-xs font-bold text-slate-900 truncate">Pan-India Sellers</div>
-                  <div className="text-[10px] text-slate-500 truncate">All 28 States &amp; 8 UTs</div>
+                  <div className="text-[10px] text-slate-600 truncate">All 28 States &amp; 8 UTs</div>
                 </div>
               </button>
             </div>
@@ -448,11 +473,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </section>
 
-      {/* 3. Shop by Category Horizontal Carousel (Rounded Pill Cards) */}
-      <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5">
+      {/* 3. Shop by Category Horizontal Carousel */}
+      <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5 below-fold-section">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5 text-[#091e3a]" />
+            <LayoutGrid className="w-4 h-4 sm:w-5 sm:h-5 text-[#091e3a]" aria-hidden="true" />
             <h2 className="text-base sm:text-lg font-extrabold text-[#091e3a] font-brand">
               Shop by Category
             </h2>
@@ -460,10 +485,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <button
             type="button"
             onClick={onGoToCatalog}
-            className="text-xs font-bold text-[#091e3a] hover:text-orange-600 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+            className="text-xs font-bold text-[#091e3a] hover:text-[#c2410c] flex items-center gap-1 cursor-pointer whitespace-nowrap"
           >
             <span>View All Categories</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
 
@@ -472,9 +497,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
             type="button"
             onClick={() => scrollCategories('left')}
             aria-label="Scroll categories left"
-            className="hidden sm:flex w-7 h-7 rounded-full bg-white border border-slate-200 hover:border-orange-400 shadow-xs items-center justify-center text-slate-700 cursor-pointer shrink-0 mr-2"
+            className="hidden sm:flex w-8 h-8 rounded-full bg-white border border-slate-200 hover:border-orange-500 shadow-xs items-center justify-center text-slate-800 cursor-pointer shrink-0 mr-2"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-4 h-4" aria-hidden="true" />
           </button>
 
           <div
@@ -492,12 +517,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 >
                   <div className="w-full h-16 rounded-full bg-white border border-slate-200 group-hover:border-orange-400 shadow-2xs overflow-hidden flex items-center justify-center p-1.5 transition-all">
                     {previewImg ? (
-                      <img
+                      <OptimizedImage
                         src={previewImg}
                         alt={cat.name}
-                        referrerPolicy="no-referrer"
+                        widths={[96, 160]}
+                        sizes="48px"
+                        width={48}
+                        height={48}
                         className="w-12 h-12 rounded-full object-cover group-hover:scale-105 transition-transform"
-                        loading="lazy"
                       />
                     ) : (
                       <div className={`w-11 h-11 rounded-full flex items-center justify-center ${getCategoryAccent(cat.id)}`}>
@@ -505,7 +532,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                       </div>
                     )}
                   </div>
-                  <span className="mt-1.5 font-bold text-xs text-slate-900 group-hover:text-orange-600 line-clamp-1 text-center w-full px-1">
+                  <span className="mt-1.5 font-bold text-xs text-slate-900 group-hover:text-[#c2410c] line-clamp-1 text-center w-full px-1">
                     {cat.name}
                   </span>
                 </button>
@@ -517,19 +544,19 @@ export const HomeView: React.FC<HomeViewProps> = ({
             type="button"
             onClick={() => scrollCategories('right')}
             aria-label="Scroll categories right"
-            className="hidden sm:flex w-7 h-7 rounded-full bg-white border border-slate-200 hover:border-orange-400 shadow-xs items-center justify-center text-slate-700 cursor-pointer shrink-0 ml-2"
+            className="hidden sm:flex w-8 h-8 rounded-full bg-white border border-slate-200 hover:border-orange-500 shadow-xs items-center justify-center text-slate-800 cursor-pointer shrink-0 ml-2"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
       </section>
 
       {/* 4. Featured Shops (Compact Horizontal 4-Card Row Matching Reference) */}
       {activeSellers.length > 0 && (
-        <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5">
+        <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5 below-fold-section">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Store className="w-4 h-4 sm:w-5 sm:h-5 text-[#f97316] shrink-0" />
+              <Store className="w-4 h-4 sm:w-5 sm:h-5 text-[#c2410c] shrink-0" aria-hidden="true" />
               <h2 className="text-base sm:text-lg font-extrabold text-[#091e3a] font-brand">
                 Featured Shops
               </h2>
@@ -537,10 +564,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <button
               type="button"
               onClick={onGoToShops || onGoToCatalog}
-              className="text-xs font-bold text-[#091e3a] hover:text-orange-600 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              className="text-xs font-bold text-[#091e3a] hover:text-[#c2410c] flex items-center gap-1 cursor-pointer whitespace-nowrap"
             >
               <span>View All Shops</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>
 
@@ -548,20 +575,22 @@ export const HomeView: React.FC<HomeViewProps> = ({
             {activeSellers.slice(0, 4).map((seller) => (
               <div
                 key={seller.id}
-                className="bg-white border border-slate-200 rounded-xl p-2.5 hover:border-orange-300 hover:shadow-sm transition-all flex items-center gap-3"
+                className="bg-white border border-slate-200 rounded-xl p-2.5 hover:border-orange-400 hover:shadow-sm transition-all flex items-center gap-3"
               >
                 <div className="w-20 h-16 rounded-lg overflow-hidden bg-[#091e3a] shrink-0 border border-slate-100">
                   {seller.bannerImage ? (
-                    <img
+                    <OptimizedImage
                       src={seller.bannerImage}
                       alt={seller.shopName}
-                      referrerPolicy="no-referrer"
+                      widths={[160, 320]}
+                      sizes="80px"
+                      width={80}
+                      height={64}
                       className="w-full h-full object-cover"
-                      loading="lazy"
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-orange-400">
-                      <Store className="w-6 h-6" />
+                      <Store className="w-6 h-6" aria-hidden="true" />
                     </div>
                   )}
                 </div>
@@ -570,14 +599,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   <h3 className="font-bold text-xs text-slate-900 truncate" title={seller.shopName}>
                     {seller.shopName}
                   </h3>
-                  <div className="text-[11px] text-slate-500 truncate">
+                  <div className="text-[11px] text-slate-600 truncate">
                     {seller.city || seller.locality}, {seller.state || 'Uttar Pradesh'}
                   </div>
                   <div className="flex items-center justify-between gap-2 pt-0.5">
-                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-0.5 tabular-nums">
-                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                    <span className="text-[11px] font-bold text-slate-900 flex items-center gap-0.5 tabular-nums">
+                      <Star className="w-3 h-3 fill-amber-400 text-amber-500" aria-hidden="true" />
                       <span>{seller.rating}</span>
-                      <span className="text-slate-400 font-normal">({seller.reviewsCount || 85})</span>
+                      <span className="text-slate-600 font-normal">({seller.reviewsCount || 85})</span>
                     </span>
                     <button
                       type="button"
@@ -588,10 +617,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
                           ? onGoToShops()
                           : onGoToCatalog()
                       }
-                      className="px-2.5 py-1 rounded-md border border-slate-200 hover:border-orange-500 hover:bg-[#f97316] hover:text-white text-[#091e3a] text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                      className="px-2.5 py-1 rounded-md border border-slate-300 hover:border-[#c2410c] hover:bg-[#c2410c] hover:text-white text-[#091e3a] text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0"
                     >
                       <span>Visit Store</span>
-                      <ArrowRight className="w-2.5 h-2.5" />
+                      <ArrowRight className="w-2.5 h-2.5" aria-hidden="true" />
                     </button>
                   </div>
                 </div>
@@ -676,12 +705,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </section>
 
-      {/* 6. Construction Materials & Hardware (5 cards/row desktop, 2 cards/row mobile) */}
+      {/* 6. Construction Materials & Hardware */}
       {constructionProducts.length > 0 && (
-        <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5">
+        <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5 below-fold-section">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-[#091e3a] shrink-0" />
+              <Building2 className="w-4 h-4 sm:w-5 sm:h-5 text-[#091e3a] shrink-0" aria-hidden="true" />
               <h2 className="text-base sm:text-lg font-extrabold text-[#091e3a] font-brand">
                 Construction Materials &amp; Hardware
               </h2>
@@ -689,10 +718,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <button
               type="button"
               onClick={() => onSelectCategory('construction')}
-              className="text-xs font-bold text-[#091e3a] hover:text-orange-600 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              className="text-xs font-bold text-[#091e3a] hover:text-[#c2410c] flex items-center gap-1 cursor-pointer whitespace-nowrap"
             >
               <span>View All</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>
 
@@ -713,11 +742,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </section>
       )}
 
-      {/* 7. Saharanpur Best Sellers & Woodcraft (5 cards/row desktop, 2 cards/row mobile) */}
-      <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5">
+      {/* 7. Saharanpur Best Sellers & Woodcraft */}
+      <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5 below-fold-section">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#f97316] shrink-0" />
+            <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#c2410c] shrink-0" aria-hidden="true" />
             <h2 className="text-base sm:text-lg font-extrabold text-[#091e3a] font-brand">
               Saharanpur Woodcraft &amp; Best Sellers
             </h2>
@@ -725,10 +754,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <button
             type="button"
             onClick={onGoToCatalog}
-            className="text-xs font-bold text-[#091e3a] hover:text-orange-600 flex items-center gap-1 cursor-pointer whitespace-nowrap"
+            className="text-xs font-bold text-[#091e3a] hover:text-[#c2410c] flex items-center gap-1 cursor-pointer whitespace-nowrap"
           >
             <span>Browse All Products</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </div>
 
@@ -750,11 +779,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </section>
 
-      {/* 8. Recently Viewed (5 cards/row desktop, 2 cards/row mobile) */}
+      {/* 8. Recently Viewed */}
       {recentlyViewedProducts.length > 0 && (
-        <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5">
+        <section className="max-w-[1400px] mx-auto px-3 sm:px-4 space-y-2.5 below-fold-section">
           <div className="flex items-center gap-2">
-            <Eye className="w-4 h-4 text-[#091e3a]" />
+            <Eye className="w-4 h-4 text-[#091e3a]" aria-hidden="true" />
             <h2 className="text-base font-extrabold text-[#091e3a] font-brand">
               Recently Viewed Products
             </h2>
@@ -778,17 +807,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
       )}
 
       {/* 9. Compact Seller Corner Strip */}
-      <section className="max-w-[1400px] mx-auto px-3 sm:px-4">
+      <section className="max-w-[1400px] mx-auto px-3 sm:px-4 below-fold-section">
         <div className="bg-[#091e3a] text-white rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#f97316] text-white flex items-center justify-center shrink-0">
-              <Store className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-lg bg-[#c2410c] text-white flex items-center justify-center shrink-0">
+              <Store className="w-5 h-5" aria-hidden="true" />
             </div>
             <div>
-              <h3 className="text-sm sm:text-base font-bold font-brand">
+              <h2 className="text-sm sm:text-base font-bold font-brand">
                 Sell Your Products on MattoKart — Seller Corner
-              </h3>
-              <p className="text-xs text-slate-300">
+              </h2>
+              <p className="text-xs text-slate-200">
                 Free 1st Year for Sellers across India (₹0 registration &amp; listing fee). Sell anywhere in India with COD &amp; courier dispatch.
               </p>
             </div>
@@ -797,7 +826,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <button
               type="button"
               onClick={onGoToSellerRegister}
-              className="flex-1 sm:flex-initial px-4 py-2 rounded-lg bg-[#f97316] hover:bg-orange-600 text-white font-bold text-xs transition-colors cursor-pointer whitespace-nowrap text-center"
+              className="flex-1 sm:flex-initial px-4 py-2 rounded-lg bg-[#c2410c] hover:bg-[#9a3412] text-white font-bold text-xs transition-colors cursor-pointer whitespace-nowrap text-center"
             >
               Become a Seller
             </button>
@@ -805,9 +834,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
               href="https://wa.me/918221077674"
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap"
+              className="px-3.5 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white font-semibold text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap"
             >
-              <MessageCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <MessageCircle className="w-3.5 h-3.5 text-emerald-300" aria-hidden="true" />
               <span>Help</span>
             </a>
           </div>
