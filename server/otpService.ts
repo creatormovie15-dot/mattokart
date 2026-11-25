@@ -1,5 +1,4 @@
-import crypto from 'node:crypto';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export type AuthRole = 'customer' | 'seller' | 'admin';
 
@@ -16,12 +15,11 @@ export interface SendOtpServiceResult {
   body: {
     success: boolean;
     providerConfigured: boolean;
-    provider?: 'twilio_verify' | 'twilio_sms' | 'msg91' | 'supabase_phone_auth' | 'none';
+    provider?: 'supabase_phone_auth_msg91' | 'none';
     code?: string;
     formattedPhone?: string;
     message: string;
     error?: string;
-    challengeToken?: string;
     cooldownSeconds?: number;
     retryAfterSeconds?: number;
     expiresInSeconds?: number;
@@ -35,16 +33,29 @@ export interface VerifyOtpServiceResult {
     user?: {
       id: string;
       phone: string;
+      email?: string;
       fullName: string;
       role: AuthRole;
       sellerId?: string;
       token: string;
     };
+    session?: {
+      access_token: string;
+      refresh_token: string;
+    };
     message?: string;
     error?: string;
     code?: string;
-    attemptsRemaining?: number;
   };
+}
+
+export interface VerifiedSessionUser {
+  id: string;
+  phone: string;
+  email?: string;
+  fullName: string;
+  role: AuthRole;
+  sellerId?: string;
 }
 
 interface RateLimitRecord {
@@ -53,55 +64,9 @@ interface RateLimitRecord {
   blockedUntil?: number;
 }
 
-interface PendingOtpSession {
-  codeHash: string;
-  nonce: string;
-  phone: string;
-  cleanDigits: string;
-  role: AuthRole;
-  fullName?: string;
-  provider: 'twilio_verify' | 'twilio_sms' | 'msg91' | 'supabase_phone_auth';
-  expiresAt: number;
-  failedAttempts: number;
-}
-
-interface SignedChallengePayload {
-  p: string; // clean 10-digit phone
-  r: AuthRole;
-  f?: string; // fullName
-  pr: 'twilio_verify' | 'twilio_sms' | 'msg91' | 'supabase_phone_auth';
-  e: number; // expiresAt ms
-  n: string; // nonce
-  h?: string; // hmac hash of OTP (only for direct SMS providers)
-}
-
-export interface VerifiedSessionUser {
-  id: string;
-  phone: string;
-  fullName: string;
-  role: AuthRole;
-  sellerId?: string;
-  createdAt: number;
-  expiresAt: number;
-}
-
 const otpRateLimits = new Map<string, RateLimitRecord>();
-const pendingOtpSessions = new Map<string, PendingOtpSession>();
-const revokedUserTokens = new Set<string>();
-const ephemeralFallbackSecret = crypto.randomBytes(32).toString('hex');
 
-function getServerSigningSecret(): string {
-  return (
-    process.env.OTP_SIGNING_SECRET?.trim() ||
-    process.env.ADMIN_SECRET_KEY?.trim() ||
-    process.env.TWILIO_AUTH_TOKEN?.trim() ||
-    process.env.MSG91_AUTH_KEY?.trim() ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
-    ephemeralFallbackSecret
-  );
-}
-
-function getSupabaseServerConfig(): { url: string; serviceRoleKey: string; anonKey: string } {
+export function getSupabaseServerConfig(): { url: string; serviceRoleKey: string; anonKey: string } {
   const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
   const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   const anonKey = (
@@ -119,54 +84,35 @@ function getSupabaseServerConfig(): { url: string; serviceRoleKey: string; anonK
     v.includes('example.com');
 
   return {
-    url: isPlaceholder(url) ? '' : url,
+    url: isPlaceholder(url) ? '' : url.replace(/\/+$/, ''),
     serviceRoleKey: isPlaceholder(serviceRoleKey) ? '' : serviceRoleKey,
     anonKey: isPlaceholder(anonKey) ? '' : anonKey,
   };
 }
 
+export function getSupabaseAdminClient(): SupabaseClient | null {
+  const supa = getSupabaseServerConfig();
+  if (!supa.url || !supa.serviceRoleKey) return null;
+  return createClient(supa.url, supa.serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 export function getSmsProviderStatus(): {
-  hasTwilioVerify: boolean;
-  hasTwilioSms: boolean;
-  hasMsg91: boolean;
-  hasMsg91KeyOnly: boolean;
-  hasSupabasePhoneAuth: boolean;
+  supabaseAuthConfigured: boolean;
+  serviceRoleConfigured: boolean;
   anyConfigured: boolean;
   providerLabel: string;
 } {
-  const sid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
-  const token = (process.env.TWILIO_AUTH_TOKEN || '').trim();
-  const fromPhone = (process.env.TWILIO_PHONE_NUMBER || '').trim();
-  const verifySid = (process.env.TWILIO_VERIFY_SERVICE_SID || '').trim();
-  const msg91Key = (process.env.MSG91_AUTH_KEY || '').trim();
-  const msg91Template = (process.env.MSG91_TEMPLATE_ID || '').trim();
   const supa = getSupabaseServerConfig();
-
-  const hasTwilioVerify = Boolean(sid && token && verifySid);
-  const hasTwilioSms = Boolean(sid && token && fromPhone);
-  const hasMsg91 = Boolean(msg91Key && msg91Template);
-  const hasMsg91KeyOnly = Boolean(msg91Key && !msg91Template);
-  const hasSupabasePhoneAuth = Boolean(supa.url && (supa.serviceRoleKey || supa.anonKey));
-
-  const anyConfigured = hasTwilioVerify || hasTwilioSms || hasMsg91 || hasSupabasePhoneAuth;
-  const providerLabel = hasTwilioVerify
-    ? 'Twilio Verify'
-    : hasTwilioSms
-    ? 'Twilio SMS'
-    : hasMsg91
-    ? 'MSG91'
-    : hasSupabasePhoneAuth
-    ? 'Supabase Phone Auth'
-    : 'Not configured';
+  const supabaseAuthConfigured = Boolean(supa.url && (supa.anonKey || supa.serviceRoleKey));
+  const serviceRoleConfigured = Boolean(supa.url && supa.serviceRoleKey);
 
   return {
-    hasTwilioVerify,
-    hasTwilioSms,
-    hasMsg91,
-    hasMsg91KeyOnly,
-    hasSupabasePhoneAuth,
-    anyConfigured,
-    providerLabel,
+    supabaseAuthConfigured,
+    serviceRoleConfigured,
+    anyConfigured: supabaseAuthConfigured,
+    providerLabel: supabaseAuthConfigured ? 'Supabase Phone Auth + MSG91 (Send SMS Hook)' : 'Not configured',
   };
 }
 
@@ -216,78 +162,10 @@ export function validateIndianPhoneNumber(rawPhone: string): PhoneValidationResu
   };
 }
 
-function hashOtpCode(cleanDigits: string, role: AuthRole, otpCode: string, expiresAt: number, nonce: string): string {
-  return crypto
-    .createHmac('sha256', getServerSigningSecret())
-    .update(`${cleanDigits}:${role}:${otpCode}:${expiresAt}:${nonce}`)
-    .digest('hex');
-}
-
-function signChallengePayload(payload: SignedChallengePayload): string {
-  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-  const sig = crypto.createHmac('sha256', getServerSigningSecret()).update(encoded).digest('base64url');
-  return `${encoded}.${sig}`;
-}
-
-function verifyChallengeToken(token: string): SignedChallengePayload | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 2) return null;
-    const [encoded, sig] = parts;
-    const expectedSig = crypto.createHmac('sha256', getServerSigningSecret()).update(encoded).digest('base64url');
-    const sigBuf = Buffer.from(sig, 'utf8');
-    const expectedBuf = Buffer.from(expectedSig, 'utf8');
-    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
-      return null;
-    }
-    const decoded = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as SignedChallengePayload;
-    if (!decoded || typeof decoded.p !== 'string' || typeof decoded.e !== 'number') {
-      return null;
-    }
-    return decoded;
-  } catch {
-    return null;
-  }
-}
-
-export function issueSignedUserToken(user: Omit<VerifiedSessionUser, 'expiresAt'>): string {
-  const fullPayload: VerifiedSessionUser = {
-    ...user,
-    expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000, // 7 days
-  };
-  const encoded = Buffer.from(JSON.stringify(fullPayload), 'utf8').toString('base64url');
-  const sig = crypto.createHmac('sha256', getServerSigningSecret()).update(`usr:${encoded}`).digest('base64url');
-  return `mkt_${encoded}.${sig}`;
-}
-
-export function verifySignedUserToken(token: string): VerifiedSessionUser | null {
-  try {
-    if (!token || revokedUserTokens.has(token) || !token.startsWith('mkt_')) return null;
-    const raw = token.slice(4);
-    const parts = raw.split('.');
-    if (parts.length !== 2) return null;
-    const [encoded, sig] = parts;
-    const expectedSig = crypto.createHmac('sha256', getServerSigningSecret()).update(`usr:${encoded}`).digest('base64url');
-    const sigBuf = Buffer.from(sig, 'utf8');
-    const expectedBuf = Buffer.from(expectedSig, 'utf8');
-    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
-      return null;
-    }
-    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as VerifiedSessionUser;
-    if (!parsed || !parsed.id || Date.now() > parsed.expiresAt) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-export function revokeUserToken(token?: string): void {
-  if (token) {
-    revokedUserTokens.add(token);
-  }
-}
-
-function checkRateLimit(cleanDigits: string, clientIp: string): { allowed: true } | { allowed: false; retryAfterSeconds: number; message: string } {
+function checkRateLimit(
+  cleanDigits: string,
+  clientIp: string
+): { allowed: true } | { allowed: false; retryAfterSeconds: number; message: string } {
   const key = `${clientIp}_${cleanDigits}`;
   const now = Date.now();
   const record = otpRateLimits.get(key) || { attempts: 0, lastAttemptAt: 0 };
@@ -326,7 +204,7 @@ function checkRateLimit(cleanDigits: string, clientIp: string): { allowed: true 
   return { allowed: true };
 }
 
-async function safeFetchJson(url: string, init: RequestInit): Promise<{ ok: boolean; status: number; data: any; rawText: string }> {
+async function safeFetchJson(url: string, init: RequestInit): Promise<{ ok: boolean; status: number; data: any }> {
   const response = await fetch(url, init);
   const rawText = await response.text();
   let data: any = null;
@@ -335,37 +213,108 @@ async function safeFetchJson(url: string, init: RequestInit): Promise<{ ok: bool
   } catch {
     data = { message: rawText.slice(0, 300) };
   }
-  return { ok: response.ok, status: response.status, data, rawText };
+  return { ok: response.ok, status: response.status, data };
 }
 
-async function lookupSellerByPhone(cleanDigits: string, internationalPhone: string): Promise<{ sellerId?: string; shopName?: string; ownerName?: string }> {
-  const supa = getSupabaseServerConfig();
-  if (!supa.url || !supa.serviceRoleKey) return {};
+/**
+ * Non-destructive lookup & preservation of existing user profiles and seller records.
+ * Never overwrites an existing admin/seller role and never deletes or mutates existing seller data.
+ */
+async function resolveProfileAndSeller(params: {
+  userId: string;
+  cleanDigits: string;
+  internationalPhone: string;
+  requestedRole: AuthRole;
+  requestedFullName?: string;
+}): Promise<{ role: AuthRole; fullName?: string; sellerId?: string; email?: string }> {
+  const adminClient = getSupabaseAdminClient();
+  if (!adminClient) {
+    return {
+      role: params.requestedRole,
+      fullName: params.requestedFullName,
+      sellerId: params.requestedRole === 'seller' ? `seller-${params.cleanDigits}` : undefined,
+      email: `${params.cleanDigits}@phone.mattokart.in`,
+    };
+  }
 
+  let matchedSeller: { id: string; owner_name?: string; shop_name?: string; user_id?: string } | null = null;
   try {
-    const adminClient = createClient(supa.url, supa.serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const formattedPhone = `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
-    const spacedPhone = `+91 ${cleanDigits}`;
+    const formattedPhone = `+91 ${params.cleanDigits.slice(0, 5)} ${params.cleanDigits.slice(5)}`;
+    const spacedPhone = `+91 ${params.cleanDigits}`;
 
-    const { data, error } = await adminClient
+    // Match by auth user_id first, then by normalized Indian phone formats
+    const { data: sellerByUid } = await adminClient
       .from('sellers')
-      .select('id, shop_name, owner_name, phone')
-      .or(`phone.eq.${internationalPhone},phone.eq.${formattedPhone},phone.eq.${spacedPhone},phone.eq.${cleanDigits}`)
+      .select('id, owner_name, shop_name, user_id')
+      .eq('user_id', params.userId)
       .limit(1);
 
-    if (!error && Array.isArray(data) && data.length > 0) {
-      return {
-        sellerId: data[0].id,
-        shopName: data[0].shop_name,
-        ownerName: data[0].owner_name,
-      };
+    if (Array.isArray(sellerByUid) && sellerByUid.length > 0) {
+      matchedSeller = sellerByUid[0];
+    } else {
+      const { data: sellerByPhone } = await adminClient
+        .from('sellers')
+        .select('id, owner_name, shop_name, user_id')
+        .or(
+          `phone.eq.${params.internationalPhone},phone.eq.${formattedPhone},phone.eq.${spacedPhone},phone.eq.${params.cleanDigits}`
+        )
+        .limit(1);
+
+      if (Array.isArray(sellerByPhone) && sellerByPhone.length > 0) {
+        matchedSeller = sellerByPhone[0];
+      }
     }
   } catch {
-    // Preserve caller fallback without modifying seller records
+    // Preserve graceful fallback without mutating existing seller data
   }
-  return {};
+
+  let resolvedRole: AuthRole = matchedSeller ? 'seller' : params.requestedRole;
+  let resolvedName = params.requestedFullName || matchedSeller?.owner_name;
+  let resolvedEmail = `${params.cleanDigits}@phone.mattokart.in`;
+
+  try {
+    const { data: existingProfile } = await adminClient
+      .from('profiles')
+      .select('id, email, full_name, role')
+      .eq('id', params.userId)
+      .maybeSingle();
+
+    if (existingProfile) {
+      // Preserve existing role (especially admin or seller)
+      if (existingProfile.role === 'admin') {
+        resolvedRole = 'admin';
+      } else if (existingProfile.role === 'seller' || matchedSeller) {
+        resolvedRole = 'seller';
+      } else {
+        resolvedRole = existingProfile.role as AuthRole;
+      }
+
+      if (existingProfile.full_name) {
+        resolvedName = existingProfile.full_name;
+      }
+      if (existingProfile.email) {
+        resolvedEmail = existingProfile.email;
+      }
+    } else {
+      // Create missing profile safely using non-null email fallback
+      await adminClient.from('profiles').insert({
+        id: params.userId,
+        email: resolvedEmail,
+        full_name: resolvedName || null,
+        phone: params.internationalPhone,
+        role: resolvedRole === 'admin' ? 'customer' : resolvedRole,
+      });
+    }
+  } catch {
+    // Do not block verified login if profile table has not yet been seeded
+  }
+
+  return {
+    role: resolvedRole,
+    fullName: resolvedName,
+    sellerId: matchedSeller?.id || (resolvedRole === 'seller' ? `seller-${params.cleanDigits}` : undefined),
+    email: resolvedEmail,
+  };
 }
 
 export async function handleSendOtp(params: {
@@ -390,6 +339,24 @@ export async function handleSendOtp(params: {
     };
   }
 
+  const supa = getSupabaseServerConfig();
+  const supaApiKey = supa.anonKey || supa.serviceRoleKey;
+
+  if (!supa.url || !supaApiKey) {
+    return {
+      httpStatus: 503,
+      body: {
+        success: false,
+        providerConfigured: false,
+        provider: 'none',
+        code: 'SMS_PROVIDER_NOT_CONFIGURED',
+        message: 'Supabase Phone Auth is not configured on this server.',
+        error:
+          'Authentication service is not configured. Set SUPABASE_URL, SUPABASE_ANON_KEY (or VITE_SUPABASE_PUBLISHABLE_KEY), and SUPABASE_SERVICE_ROLE_KEY, and enable Phone Auth with the send-sms-msg91 Hook in Supabase.',
+      },
+    };
+  }
+
   const role: AuthRole = params.role === 'seller' ? 'seller' : 'customer';
   const fullName = params.fullName ? String(params.fullName).trim().slice(0, 120) : undefined;
   const cleanDigits = phoneCheck.cleanDigits;
@@ -401,7 +368,7 @@ export async function handleSendOtp(params: {
       httpStatus: 429,
       body: {
         success: false,
-        providerConfigured: getSmsProviderStatus().anyConfigured,
+        providerConfigured: true,
         code: 'RATE_LIMITED',
         message: rateCheck.message,
         error: rateCheck.message,
@@ -411,257 +378,7 @@ export async function handleSendOtp(params: {
     };
   }
 
-  const status = getSmsProviderStatus();
-
-  if (status.hasMsg91KeyOnly && !status.hasTwilioVerify && !status.hasTwilioSms && !status.hasSupabasePhoneAuth) {
-    return {
-      httpStatus: 503,
-      body: {
-        success: false,
-        providerConfigured: false,
-        code: 'MSG91_TEMPLATE_MISSING',
-        message: 'MSG91_TEMPLATE_ID is required alongside MSG91_AUTH_KEY for DLT-compliant Indian SMS OTP delivery.',
-        error: 'MSG91_TEMPLATE_ID is missing in server environment variables.',
-      },
-    };
-  }
-
-  if (!status.anyConfigured) {
-    return {
-      httpStatus: 503,
-      body: {
-        success: false,
-        providerConfigured: false,
-        provider: 'none',
-        code: 'SMS_PROVIDER_NOT_CONFIGURED',
-        message: 'Live SMS OTP gateway is not configured on this server.',
-        error:
-          'SMS OTP service is not configured. Please add Twilio (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID or TWILIO_PHONE_NUMBER), MSG91 (MSG91_AUTH_KEY, MSG91_TEMPLATE_ID), or Supabase Phone Auth environment variables.',
-      },
-    };
-  }
-
-  const expiresAt = Date.now() + 5 * 60 * 1000;
-  const nonce = crypto.randomBytes(12).toString('hex');
-
-  // 1. Twilio Verify (Recommended stateless SMS verification)
-  if (status.hasTwilioVerify) {
-    const sid = process.env.TWILIO_ACCOUNT_SID!.trim();
-    const token = process.env.TWILIO_AUTH_TOKEN!.trim();
-    const verifySid = process.env.TWILIO_VERIFY_SERVICE_SID!.trim();
-    const auth = Buffer.from(`${sid}:${token}`).toString('base64');
-
-    const form = new URLSearchParams({
-      To: internationalPhone,
-      Channel: 'sms',
-    });
-
-    const twilioRes = await safeFetchJson(
-      `https://verify.twilio.com/v2/Services/${encodeURIComponent(verifySid)}/Verifications`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: form.toString(),
-      }
-    );
-
-    if (!twilioRes.ok) {
-      const errDetail = twilioRes.data?.message || `Twilio Verify returned HTTP ${twilioRes.status}`;
-      return {
-        httpStatus: 502,
-        body: {
-          success: false,
-          providerConfigured: true,
-          provider: 'twilio_verify',
-          code: 'SMS_DISPATCH_FAILED',
-          message: 'Failed to send OTP via Twilio Verify.',
-          error: `Twilio Verify SMS error: ${errDetail}`,
-        },
-      };
-    }
-
-    const challengeToken = signChallengePayload({
-      p: cleanDigits,
-      r: role,
-      f: fullName,
-      pr: 'twilio_verify',
-      e: expiresAt,
-      n: nonce,
-    });
-
-    return {
-      httpStatus: 200,
-      body: {
-        success: true,
-        providerConfigured: true,
-        provider: 'twilio_verify',
-        formattedPhone: phoneCheck.formatted,
-        message: `OTP sent via SMS to ${phoneCheck.formatted}`,
-        challengeToken,
-        cooldownSeconds: 60,
-        expiresInSeconds: 300,
-      },
-    };
-  }
-
-  // 2. Twilio Programmable SMS
-  if (status.hasTwilioSms) {
-    const otpCode = crypto.randomInt(100000, 1000000).toString();
-    const sid = process.env.TWILIO_ACCOUNT_SID!.trim();
-    const token = process.env.TWILIO_AUTH_TOKEN!.trim();
-    const fromPhone = process.env.TWILIO_PHONE_NUMBER!.trim();
-    const auth = Buffer.from(`${sid}:${token}`).toString('base64');
-
-    const form = new URLSearchParams({
-      To: internationalPhone,
-      From: fromPhone,
-      Body: `Your MattoKart verification OTP is ${otpCode}. Valid for 5 minutes. Do not share this code with anyone.`,
-    });
-
-    const twilioRes = await safeFetchJson(
-      `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(sid)}/Messages.json`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: form.toString(),
-      }
-    );
-
-    if (!twilioRes.ok) {
-      const errDetail = twilioRes.data?.message || `Twilio SMS returned HTTP ${twilioRes.status}`;
-      return {
-        httpStatus: 502,
-        body: {
-          success: false,
-          providerConfigured: true,
-          provider: 'twilio_sms',
-          code: 'SMS_DISPATCH_FAILED',
-          message: 'Failed to send OTP via Twilio SMS.',
-          error: `Twilio SMS delivery error: ${errDetail}`,
-        },
-      };
-    }
-
-    const codeHash = hashOtpCode(cleanDigits, role, otpCode, expiresAt, nonce);
-    pendingOtpSessions.set(cleanDigits, {
-      codeHash,
-      nonce,
-      phone: internationalPhone,
-      cleanDigits,
-      role,
-      fullName,
-      provider: 'twilio_sms',
-      expiresAt,
-      failedAttempts: 0,
-    });
-
-    const challengeToken = signChallengePayload({
-      p: cleanDigits,
-      r: role,
-      f: fullName,
-      pr: 'twilio_sms',
-      e: expiresAt,
-      n: nonce,
-      h: codeHash,
-    });
-
-    return {
-      httpStatus: 200,
-      body: {
-        success: true,
-        providerConfigured: true,
-        provider: 'twilio_sms',
-        formattedPhone: phoneCheck.formatted,
-        message: `OTP sent via SMS to ${phoneCheck.formatted}`,
-        challengeToken,
-        cooldownSeconds: 60,
-        expiresInSeconds: 300,
-      },
-    };
-  }
-
-  // 3. MSG91 India SMS Gateway
-  if (status.hasMsg91) {
-    const otpCode = crypto.randomInt(100000, 1000000).toString();
-    const authKey = process.env.MSG91_AUTH_KEY!.trim();
-    const templateId = process.env.MSG91_TEMPLATE_ID!.trim();
-    const msg91Url = new URL('https://control.msg91.com/api/v5/otp');
-    msg91Url.searchParams.set('template_id', templateId);
-    msg91Url.searchParams.set('mobile', `91${cleanDigits}`);
-    msg91Url.searchParams.set('otp', otpCode);
-
-    const msg91Res = await safeFetchJson(msg91Url.toString(), {
-      method: 'POST',
-      headers: {
-        authkey: authKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ OTP: otpCode }),
-    });
-
-    if (!msg91Res.ok || msg91Res.data?.type === 'error') {
-      const errDetail = msg91Res.data?.message || `MSG91 returned HTTP ${msg91Res.status}`;
-      return {
-        httpStatus: 502,
-        body: {
-          success: false,
-          providerConfigured: true,
-          provider: 'msg91',
-          code: 'SMS_DISPATCH_FAILED',
-          message: 'Failed to dispatch OTP via MSG91.',
-          error: `MSG91 SMS error: ${errDetail}`,
-        },
-      };
-    }
-
-    const codeHash = hashOtpCode(cleanDigits, role, otpCode, expiresAt, nonce);
-    pendingOtpSessions.set(cleanDigits, {
-      codeHash,
-      nonce,
-      phone: internationalPhone,
-      cleanDigits,
-      role,
-      fullName,
-      provider: 'msg91',
-      expiresAt,
-      failedAttempts: 0,
-    });
-
-    const challengeToken = signChallengePayload({
-      p: cleanDigits,
-      r: role,
-      f: fullName,
-      pr: 'msg91',
-      e: expiresAt,
-      n: nonce,
-      h: codeHash,
-    });
-
-    return {
-      httpStatus: 200,
-      body: {
-        success: true,
-        providerConfigured: true,
-        provider: 'msg91',
-        formattedPhone: phoneCheck.formatted,
-        message: `OTP sent via SMS to ${phoneCheck.formatted}`,
-        challengeToken,
-        cooldownSeconds: 60,
-        expiresInSeconds: 300,
-      },
-    };
-  }
-
-  // 4. Supabase Phone Auth (/auth/v1/otp)
-  const supa = getSupabaseServerConfig();
-  const supaApiKey = supa.serviceRoleKey || supa.anonKey;
-  const supaRes = await safeFetchJson(`${supa.url.replace(/\/+$/, '')}/auth/v1/otp`, {
+  const supaRes = await safeFetchJson(`${supa.url}/auth/v1/otp`, {
     method: 'POST',
     headers: {
       apikey: supaApiKey,
@@ -679,38 +396,34 @@ export async function handleSendOtp(params: {
   });
 
   if (!supaRes.ok) {
-    const rawMsg = supaRes.data?.msg || supaRes.data?.error_description || supaRes.data?.message || `HTTP ${supaRes.status}`;
+    const rawMsg =
+      supaRes.data?.msg ||
+      supaRes.data?.error_description ||
+      supaRes.data?.message ||
+      `Supabase Auth returned HTTP ${supaRes.status}`;
+
+    const httpStatus = supaRes.status === 429 ? 429 : supaRes.status >= 500 ? 502 : 502;
     return {
-      httpStatus: 502,
+      httpStatus,
       body: {
         success: false,
-        providerConfigured: false,
-        provider: 'supabase_phone_auth',
-        code: 'SUPABASE_PHONE_PROVIDER_ERROR',
-        message: 'Supabase Phone Auth could not dispatch an SMS OTP.',
-        error: `Supabase SMS dispatch failed: ${rawMsg}. Ensure Phone Auth with an SMS provider (Twilio/MSG91) is enabled in Supabase Authentication settings, or set TWILIO_* / MSG91_* variables in Netlify.`,
+        providerConfigured: true,
+        provider: 'supabase_phone_auth_msg91',
+        code: supaRes.status === 429 ? 'SUPABASE_RATE_LIMIT' : 'SMS_DISPATCH_FAILED',
+        message: 'Failed to dispatch SMS OTP via Supabase Phone Auth.',
+        error: `OTP delivery failed: ${rawMsg}. Verify Phone Auth and the send-sms-msg91 Send SMS Hook in Supabase Dashboard.`,
       },
     };
   }
-
-  const challengeToken = signChallengePayload({
-    p: cleanDigits,
-    r: role,
-    f: fullName,
-    pr: 'supabase_phone_auth',
-    e: expiresAt,
-    n: nonce,
-  });
 
   return {
     httpStatus: 200,
     body: {
       success: true,
       providerConfigured: true,
-      provider: 'supabase_phone_auth',
+      provider: 'supabase_phone_auth_msg91',
       formattedPhone: phoneCheck.formatted,
       message: `OTP sent via SMS to ${phoneCheck.formatted}`,
-      challengeToken,
       cooldownSeconds: 60,
       expiresInSeconds: 300,
     },
@@ -722,7 +435,6 @@ export async function handleVerifyOtp(params: {
   otp?: unknown;
   role?: unknown;
   fullName?: unknown;
-  challengeToken?: unknown;
 }): Promise<VerifyOtpServiceResult> {
   const rawPhone = typeof params.phone === 'string' || typeof params.phone === 'number' ? String(params.phone) : '';
   const phoneCheck = validateIndianPhoneNumber(rawPhone);
@@ -750,229 +462,73 @@ export async function handleVerifyOtp(params: {
     };
   }
 
-  const cleanDigits = phoneCheck.cleanDigits;
-  const internationalPhone = phoneCheck.internationalPhone;
-  const status = getSmsProviderStatus();
-
-  if (!status.anyConfigured) {
+  const supa = getSupabaseServerConfig();
+  const supaApiKey = supa.anonKey || supa.serviceRoleKey;
+  if (!supa.url || !supaApiKey) {
     return {
       httpStatus: 503,
       body: {
         success: false,
         code: 'SMS_PROVIDER_NOT_CONFIGURED',
-        error: 'Authentication is unavailable: Live SMS gateway credentials are not configured on the server.',
+        error: 'Authentication is unavailable: Supabase Auth is not configured on the server.',
       },
     };
   }
 
-  const signedChallenge =
-    typeof params.challengeToken === 'string' && params.challengeToken.trim()
-      ? verifyChallengeToken(params.challengeToken.trim())
-      : null;
+  const cleanDigits = phoneCheck.cleanDigits;
+  const internationalPhone = phoneCheck.internationalPhone;
+  const requestedRole: AuthRole = params.role === 'seller' ? 'seller' : 'customer';
+  const requestedFullName = params.fullName ? String(params.fullName).trim().slice(0, 120) : undefined;
 
-  const localSession = pendingOtpSessions.get(cleanDigits);
-
-  if (signedChallenge && signedChallenge.p !== cleanDigits) {
-    return {
-      httpStatus: 400,
-      body: {
-        success: false,
-        code: 'CHALLENGE_PHONE_MISMATCH',
-        error: 'OTP session does not match this mobile number. Please request a new OTP.',
-      },
-    };
-  }
-
-  const expiresAt = signedChallenge?.e ?? localSession?.expiresAt;
-  if (expiresAt && Date.now() > expiresAt) {
-    pendingOtpSessions.delete(cleanDigits);
-    return {
-      httpStatus: 400,
-      body: {
-        success: false,
-        code: 'OTP_EXPIRED',
-        error: 'OTP has expired. Please request a new verification code.',
-      },
-    };
-  }
-
-  const provider =
-    signedChallenge?.pr ||
-    localSession?.provider ||
-    (status.hasTwilioVerify
-      ? 'twilio_verify'
-      : status.hasTwilioSms
-      ? 'twilio_sms'
-      : status.hasMsg91
-      ? 'msg91'
-      : 'supabase_phone_auth');
-
-  const resolvedRole: AuthRole =
-    params.role === 'seller' || signedChallenge?.r === 'seller' || localSession?.role === 'seller'
-      ? 'seller'
-      : 'customer';
-
-  let verifiedUserId = `user-${cleanDigits}`;
-
-  if (provider === 'twilio_verify') {
-    if (!status.hasTwilioVerify) {
-      return {
-        httpStatus: 503,
-        body: { success: false, error: 'Twilio Verify credentials are missing on the server.' },
-      };
-    }
-
-    const sid = process.env.TWILIO_ACCOUNT_SID!.trim();
-    const token = process.env.TWILIO_AUTH_TOKEN!.trim();
-    const verifySid = process.env.TWILIO_VERIFY_SERVICE_SID!.trim();
-    const auth = Buffer.from(`${sid}:${token}`).toString('base64');
-    const form = new URLSearchParams({
-      To: internationalPhone,
-      Code: cleanInputOtp,
-    });
-
-    const verifyRes = await safeFetchJson(
-      `https://verify.twilio.com/v2/Services/${encodeURIComponent(verifySid)}/VerificationCheck`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: form.toString(),
-      }
-    );
-
-    if (!verifyRes.ok || verifyRes.data?.status !== 'approved') {
-      return {
-        httpStatus: verifyRes.ok ? 400 : 502,
-        body: {
-          success: false,
-          code: 'OTP_VERIFICATION_FAILED',
-          error: verifyRes.data?.message || 'Incorrect or expired OTP code. Please check and try again.',
-        },
-      };
-    }
-  } else if (provider === 'supabase_phone_auth') {
-    const supa = getSupabaseServerConfig();
-    if (!supa.url || (!supa.serviceRoleKey && !supa.anonKey)) {
-      return {
-        httpStatus: 503,
-        body: { success: false, error: 'Supabase Auth credentials are missing on the server.' },
-      };
-    }
-
-    const supaApiKey = supa.serviceRoleKey || supa.anonKey;
-    const verifyRes = await safeFetchJson(`${supa.url.replace(/\/+$/, '')}/auth/v1/verify`, {
-      method: 'POST',
-      headers: {
-        apikey: supaApiKey,
-        Authorization: `Bearer ${supaApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        phone: internationalPhone,
-        token: cleanInputOtp,
-        type: 'sms',
-      }),
-    });
-
-    if (!verifyRes.ok) {
-      const msg =
-        verifyRes.data?.msg ||
-        verifyRes.data?.error_description ||
-        verifyRes.data?.message ||
-        'Incorrect or expired OTP code.';
-      return {
-        httpStatus: verifyRes.status >= 500 ? 502 : 400,
-        body: {
-          success: false,
-          code: 'OTP_VERIFICATION_FAILED',
-          error: msg,
-        },
-      };
-    }
-
-    if (verifyRes.data?.user?.id) {
-      verifiedUserId = String(verifyRes.data.user.id);
-    }
-  } else {
-    // twilio_sms or msg91 using stateless signed challenge or local session hash
-    if (!signedChallenge?.h && !localSession) {
-      return {
-        httpStatus: 400,
-        body: {
-          success: false,
-          code: 'NO_ACTIVE_OTP',
-          error: 'No active OTP session found for this mobile number. Please click "Send OTP".',
-        },
-      };
-    }
-
-    if (localSession && localSession.failedAttempts >= 5) {
-      pendingOtpSessions.delete(cleanDigits);
-      return {
-        httpStatus: 429,
-        body: {
-          success: false,
-          code: 'OTP_LOCKED',
-          error: 'Too many incorrect attempts. This OTP session has been locked. Please request a new code.',
-        },
-      };
-    }
-
-    const targetNonce = signedChallenge?.n ?? localSession!.nonce;
-    const targetExpiresAt = signedChallenge?.e ?? localSession!.expiresAt;
-    const expectedHash = signedChallenge?.h ?? localSession!.codeHash;
-    const candidateHash = hashOtpCode(cleanDigits, resolvedRole, cleanInputOtp, targetExpiresAt, targetNonce);
-
-    const expectedBuf = Buffer.from(expectedHash, 'utf8');
-    const candidateBuf = Buffer.from(candidateHash, 'utf8');
-    const isMatch = expectedBuf.length === candidateBuf.length && crypto.timingSafeEqual(expectedBuf, candidateBuf);
-
-    if (!isMatch) {
-      let attemptsRemaining: number | undefined;
-      if (localSession) {
-        localSession.failedAttempts += 1;
-        attemptsRemaining = Math.max(0, 5 - localSession.failedAttempts);
-      }
-      return {
-        httpStatus: 400,
-        body: {
-          success: false,
-          code: 'INCORRECT_OTP',
-          error:
-            attemptsRemaining !== undefined
-              ? `Incorrect OTP code. ${attemptsRemaining} attempts remaining.`
-              : 'Incorrect OTP code. Please verify and try again.',
-          attemptsRemaining,
-        },
-      };
-    }
-
-    pendingOtpSessions.delete(cleanDigits);
-  }
-
-  // Non-destructive read-only seller lookup if Supabase service role is configured
-  const matchedSeller = resolvedRole === 'seller' ? await lookupSellerByPhone(cleanDigits, internationalPhone) : {};
-
-  const requestedFullName =
-    (typeof params.fullName === 'string' && params.fullName.trim()) ||
-    signedChallenge?.f ||
-    localSession?.fullName ||
-    matchedSeller.ownerName ||
-    (resolvedRole === 'seller' ? 'MattoKart Seller' : 'MattoKart Customer');
-
-  const sellerId = resolvedRole === 'seller' ? matchedSeller.sellerId || `seller-${cleanDigits}` : undefined;
-
-  const userToken = issueSignedUserToken({
-    id: verifiedUserId,
-    phone: internationalPhone,
-    fullName: requestedFullName,
-    role: resolvedRole,
-    sellerId,
-    createdAt: Date.now(),
+  const verifyRes = await safeFetchJson(`${supa.url}/auth/v1/verify`, {
+    method: 'POST',
+    headers: {
+      apikey: supaApiKey,
+      Authorization: `Bearer ${supaApiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      phone: internationalPhone,
+      token: cleanInputOtp,
+      type: 'sms',
+    }),
   });
+
+  if (!verifyRes.ok || !verifyRes.data?.access_token || !verifyRes.data?.user?.id) {
+    const rawMsg =
+      verifyRes.data?.msg ||
+      verifyRes.data?.error_description ||
+      verifyRes.data?.message ||
+      'Incorrect or expired OTP code. Please verify and try again.';
+    return {
+      httpStatus: verifyRes.status >= 500 ? 502 : 400,
+      body: {
+        success: false,
+        code: 'OTP_VERIFICATION_FAILED',
+        error: rawMsg,
+      },
+    };
+  }
+
+  const verifiedUserId = String(verifyRes.data.user.id);
+  const accessToken = String(verifyRes.data.access_token);
+  const refreshToken = String(verifyRes.data.refresh_token || '');
+  const metaName =
+    requestedFullName ||
+    (typeof verifyRes.data.user?.user_metadata?.full_name === 'string'
+      ? verifyRes.data.user.user_metadata.full_name.trim()
+      : undefined);
+
+  const resolved = await resolveProfileAndSeller({
+    userId: verifiedUserId,
+    cleanDigits,
+    internationalPhone,
+    requestedRole,
+    requestedFullName: metaName,
+  });
+
+  const finalFullName =
+    resolved.fullName || (resolved.role === 'seller' ? 'MattoKart Seller' : 'MattoKart Customer');
 
   return {
     httpStatus: 200,
@@ -981,12 +537,59 @@ export async function handleVerifyOtp(params: {
       user: {
         id: verifiedUserId,
         phone: internationalPhone,
-        fullName: requestedFullName,
-        role: resolvedRole,
-        sellerId,
-        token: userToken,
+        email: resolved.email,
+        fullName: finalFullName,
+        role: resolved.role,
+        sellerId: resolved.sellerId,
+        token: accessToken,
+      },
+      session: {
+        access_token: accessToken,
+        refresh_token: refreshToken,
       },
       message: 'Verified successfully! Welcome to MattoKart.',
     },
   };
+}
+
+export async function verifySupabaseAccessToken(accessToken: string): Promise<VerifiedSessionUser | null> {
+  if (!accessToken) return null;
+  const supa = getSupabaseServerConfig();
+  const supaApiKey = supa.anonKey || supa.serviceRoleKey;
+  if (!supa.url || !supaApiKey) return null;
+
+  try {
+    const res = await safeFetchJson(`${supa.url}/auth/v1/user`, {
+      method: 'GET',
+      headers: {
+        apikey: supaApiKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!res.ok || !res.data?.id) return null;
+
+    const rawPhone = String(res.data.phone || '');
+    const digits = rawPhone.replace(/\D/g, '').slice(-10);
+    const intlPhone = digits.length === 10 ? `+91${digits}` : rawPhone;
+    const reqRole: AuthRole = res.data.user_metadata?.role === 'seller' ? 'seller' : 'customer';
+
+    const resolved = await resolveProfileAndSeller({
+      userId: String(res.data.id),
+      cleanDigits: digits,
+      internationalPhone: intlPhone,
+      requestedRole: reqRole,
+      requestedFullName: res.data.user_metadata?.full_name,
+    });
+
+    return {
+      id: String(res.data.id),
+      phone: intlPhone,
+      email: resolved.email || res.data.email,
+      fullName: resolved.fullName || (resolved.role === 'seller' ? 'MattoKart Seller' : 'MattoKart Customer'),
+      role: resolved.role,
+      sellerId: resolved.sellerId,
+    };
+  } catch {
+    return null;
+  }
 }

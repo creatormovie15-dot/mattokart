@@ -1,11 +1,16 @@
 import crypto from 'node:crypto';
 import {
   getSmsProviderStatus,
+  getSupabaseServerConfig,
   handleSendOtp,
   handleVerifyOtp,
-  revokeUserToken,
-  verifySignedUserToken,
+  verifySupabaseAccessToken,
 } from './otpService';
+import {
+  syncAdminOrderStatusToSupabase,
+  syncAdminProductDecisionToSupabase,
+  syncAdminSellerDecisionToSupabase,
+} from './adminSupabaseActions';
 
 const PROHIBITED_KEYS = new Set(['admin123', 'mattokart', 'admin', 'password', '123456', 'root', 'qwerty']);
 const revokedAdminTokens = new Set<string>();
@@ -67,7 +72,6 @@ function normalizeApiPath(rawUrl: string): string {
     pathname = rawUrl.split('?')[0] || '/';
   }
 
-  // Handle Netlify Functions path prefixes cleanly
   if (pathname.startsWith('/.netlify/functions/auth-send-otp')) {
     return '/api/auth/send-otp';
   }
@@ -82,7 +86,9 @@ function normalizeApiPath(rawUrl: string): string {
   return pathname;
 }
 
-async function parseJsonBody(req: Request): Promise<{ ok: true; body: Record<string, any> } | { ok: false; error: string }> {
+async function parseJsonBody(
+  req: Request
+): Promise<{ ok: true; body: Record<string, any> } | { ok: false; error: string }> {
   const text = await req.text();
   if (!text || !text.trim()) {
     return { ok: true, body: {} };
@@ -123,7 +129,7 @@ export async function handleApiRequest(req: Request): Promise<Response> {
     const apiPath = normalizeApiPath(req.url);
     const method = req.method.toUpperCase();
 
-    // 1. Send OTP
+    // 1. Send OTP (Supabase Phone Auth + MSG91 Send SMS Hook)
     if (apiPath === '/api/auth/send-otp') {
       if (method !== 'POST') {
         return jsonResponse({ success: false, error: `Method ${method} not allowed. Use POST.` }, 405);
@@ -141,7 +147,7 @@ export async function handleApiRequest(req: Request): Promise<Response> {
       return jsonResponse(result.body, result.httpStatus);
     }
 
-    // 2. Verify OTP
+    // 2. Verify OTP (Supabase Phone Auth)
     if (apiPath === '/api/auth/verify-otp') {
       if (method !== 'POST') {
         return jsonResponse({ success: false, error: `Method ${method} not allowed. Use POST.` }, 405);
@@ -155,18 +161,17 @@ export async function handleApiRequest(req: Request): Promise<Response> {
         otp: parsed.body.otp,
         role: parsed.body.role,
         fullName: parsed.body.fullName,
-        challengeToken: parsed.body.challengeToken,
       });
       return jsonResponse(result.body, result.httpStatus);
     }
 
-    // 3. Current authenticated user
+    // 3. Current authenticated user (verified directly against Supabase Auth)
     if (apiPath === '/api/auth/me') {
       if (method !== 'GET') {
         return jsonResponse({ success: false, error: `Method ${method} not allowed.` }, 405);
       }
       const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() || '';
-      const user = verifySignedUserToken(token);
+      const user = await verifySupabaseAccessToken(token);
       if (!user) {
         return jsonResponse({ success: false, error: 'Unauthorized: No active session.' }, 401);
       }
@@ -179,7 +184,17 @@ export async function handleApiRequest(req: Request): Promise<Response> {
         return jsonResponse({ success: false, error: `Method ${method} not allowed.` }, 405);
       }
       const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim();
-      revokeUserToken(token);
+      const supa = getSupabaseServerConfig();
+      const supaKey = supa.anonKey || supa.serviceRoleKey;
+      if (token && supa.url && supaKey) {
+        await fetch(`${supa.url}/auth/v1/logout`, {
+          method: 'POST',
+          headers: {
+            apikey: supaKey,
+            Authorization: `Bearer ${token}`,
+          },
+        }).catch(() => {});
+      }
       return jsonResponse({ success: true, message: 'Logged out successfully.' });
     }
 
@@ -332,7 +347,7 @@ export async function handleApiRequest(req: Request): Promise<Response> {
       return jsonResponse({ authenticated: true, role: 'admin' });
     }
 
-    // 9. Admin Seller & Product Moderation
+    // 9. Admin Seller & Product Moderation (Persisted server-side via SUPABASE_SERVICE_ROLE_KEY)
     const adminSellerMatch = apiPath.match(/^\/api\/admin\/sellers\/([^/]+)\/(approve|reject)$/);
     if (adminSellerMatch) {
       if (method !== 'POST') {
@@ -344,7 +359,15 @@ export async function handleApiRequest(req: Request): Promise<Response> {
       }
       const parsed = await parseJsonBody(req);
       const sellerId = decodeURIComponent(adminSellerMatch[1]);
-      const action = adminSellerMatch[2];
+      const action = adminSellerMatch[2] as 'approve' | 'reject';
+
+      await syncAdminSellerDecisionToSupabase({
+        sellerId,
+        action,
+        adminNotes: parsed.ok ? parsed.body.adminNotes : undefined,
+        reason: parsed.ok ? parsed.body.reason : undefined,
+      });
+
       if (action === 'approve') {
         return jsonResponse({
           success: true,
@@ -381,7 +404,14 @@ export async function handleApiRequest(req: Request): Promise<Response> {
       }
       const parsed = await parseJsonBody(req);
       const productId = decodeURIComponent(adminProductMatch[1]);
-      const action = adminProductMatch[2];
+      const action = adminProductMatch[2] as 'approve' | 'reject';
+
+      await syncAdminProductDecisionToSupabase({
+        productId,
+        action,
+        reason: parsed.ok ? parsed.body.reason : undefined,
+      });
+
       if (action === 'approve') {
         return jsonResponse({
           success: true,
@@ -399,6 +429,45 @@ export async function handleApiRequest(req: Request): Promise<Response> {
           parsed.ok && parsed.body.reason ? parsed.body.reason : 'Listing does not comply with marketplace standards',
         reviewedAt: new Date().toISOString(),
         message: 'Product rejected.',
+      });
+    }
+
+    // 9b. Admin Order Status & 10-Stage Tracking Update (Protected by Admin Bearer Token)
+    const adminOrderMatch = apiPath.match(/^\/api\/admin\/orders\/([^/]+)\/status$/);
+    if (adminOrderMatch) {
+      if (method !== 'PATCH' && method !== 'POST') {
+        return jsonResponse({ success: false, error: `Method ${method} not allowed.` }, 405);
+      }
+      const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() || '';
+      if (!verifyAdminToken(token)) {
+        return jsonResponse({ success: false, error: 'Access Denied: Valid administrator session required.' }, 401);
+      }
+      const parsed = await parseJsonBody(req);
+      if (!parsed.ok) {
+        return jsonResponse({ success: false, error: parsed.error }, 400);
+      }
+      const orderId = decodeURIComponent(adminOrderMatch[1]);
+      const { status, sellerId, courierName, trackingNumber, notes } = parsed.body;
+      if (!status) {
+        return jsonResponse({ success: false, error: 'Order status is required.' }, 400);
+      }
+
+      const syncRes = await syncAdminOrderStatusToSupabase({
+        orderId,
+        status: String(status),
+        sellerId: sellerId ? String(sellerId) : undefined,
+        courierName: courierName ? String(courierName) : undefined,
+        trackingNumber: trackingNumber ? String(trackingNumber) : undefined,
+        notes: notes ? String(notes) : undefined,
+      });
+
+      return jsonResponse({
+        success: true,
+        orderId,
+        status,
+        supabaseSynced: syncRes.synced,
+        updatedAt: new Date().toISOString(),
+        message: `Admin updated order status to ${status}.`,
       });
     }
 
@@ -485,10 +554,7 @@ export async function handleApiRequest(req: Request): Promise<Response> {
     // 11. System Status
     if (apiPath === '/api/system/status') {
       const smsStatus = getSmsProviderStatus();
-      const hasSupabase = Boolean(
-        (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL) &&
-          (process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)
-      );
+      const supa = getSupabaseServerConfig();
       const hasKyc = Boolean(process.env.DIGILOCKER_CLIENT_ID || process.env.KYC_PROVIDER_API_KEY);
       const hasRazorpay = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
       const hasShiprocket = Boolean(process.env.SHIPROCKET_EMAIL && process.env.SHIPROCKET_PASSWORD);
@@ -499,8 +565,9 @@ export async function handleApiRequest(req: Request): Promise<Response> {
         location: 'Saharanpur, Uttar Pradesh',
         integrations: {
           supabaseDatabase: {
-            configured: hasSupabase,
-            note: hasSupabase ? 'Active' : 'Awaiting SUPABASE_URL & key in environment',
+            configured: Boolean(supa.url && (supa.anonKey || supa.serviceRoleKey)),
+            serviceRoleConfigured: Boolean(supa.serviceRoleKey),
+            note: supa.url ? 'Active' : 'Awaiting SUPABASE_URL & key in environment',
           },
           stageBCheckoutCodTracking: {
             configured: true,
@@ -518,8 +585,8 @@ export async function handleApiRequest(req: Request): Promise<Response> {
             configured: smsStatus.anyConfigured,
             provider: smsStatus.providerLabel,
             note: smsStatus.anyConfigured
-              ? `Live Indian SMS configured (${smsStatus.providerLabel})`
-              : 'Not configured (Set TWILIO_*, MSG91_*, or Supabase Phone Auth)',
+              ? 'Supabase Phone Auth active (dispatching via send-sms-msg91 Edge Function Hook)'
+              : 'Not configured (Set SUPABASE_URL, key, and enable Phone Auth + send-sms-msg91 Hook)',
           },
           identityKycProvider: {
             configured: hasKyc,

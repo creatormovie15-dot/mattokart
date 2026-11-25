@@ -47,7 +47,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { HomeView } from './views/HomeView';
 import type { PlaceOrderPayload } from './views/CheckoutView';
 import { getRouteSeoMeta, applyDocumentSeo } from './utils/seo';
-import { isSupabaseConfigured } from './lib/supabaseClient';
+import { supabase, isSupabaseConfigured } from './lib/supabaseClient';
 
 const LocationModal = lazy(() =>
   import('./components/LocationModal').then((m) => ({ default: m.LocationModal }))
@@ -298,6 +298,33 @@ export default function App() {
     setCurrentUser(null);
     addToast('info', 'Logged Out', 'You have been logged out from your MattoKart account.');
   };
+
+  // Keep Supabase browser session token synced cleanly without overriding existing roles
+  useEffect(() => {
+    if (!supabase || !isSupabaseConfigured) return;
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser((prev) => {
+          if (prev) setStoredAuthUser(null);
+          return null;
+        });
+        return;
+      }
+      if (session?.access_token && session.user?.id) {
+        setCurrentUser((prev) => {
+          if (!prev || prev.id !== session.user.id || prev.token === session.access_token) {
+            return prev;
+          }
+          const updated = { ...prev, token: session.access_token };
+          setStoredAuthUser(updated);
+          return updated;
+        });
+      }
+    });
+    return () => {
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
 
   // Modals
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<Product | null>(null);
@@ -717,7 +744,8 @@ export default function App() {
     const nowIso = new Date().toISOString();
     const itemsTotal = orderData.subtotalAmount || cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
     const totalAmount = itemsTotal + (orderData.deliveryFee || 0) + (orderData.codFee || 0);
-    const orderId = `ord-${Date.now()}`;
+    const orderId =
+      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ord-${Date.now()}`;
     const orderNum = `MKT-${orderData.pinCode || '247001'}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const orderItems: OrderItem[] = cart.map((item, idx) => ({
@@ -876,7 +904,10 @@ export default function App() {
     }
 
     if (isSupabaseConfigured) {
-      updateOrderStatusInSupabase(orderId, 'cancelled', reason).catch(() => {});
+      updateOrderStatusInSupabase(orderId, 'cancelled', reason, {
+        actorRole: 'customer',
+        location: `${targetOrder.city}, ${targetOrder.state}`,
+      }).catch(() => {});
     }
 
     const nowIso = new Date().toISOString();
@@ -936,7 +967,10 @@ export default function App() {
     }
 
     if (isSupabaseConfigured) {
-      updateOrderStatusInSupabase(orderId, 'return_requested', reason).catch(() => {});
+      updateOrderStatusInSupabase(orderId, 'return_requested', reason, {
+        actorRole: 'customer',
+        location: `${targetOrder.city}, ${targetOrder.state}`,
+      }).catch(() => {});
     }
 
     const nowIso = new Date().toISOString();
@@ -999,7 +1033,10 @@ export default function App() {
     }
 
     if (isSupabaseConfigured) {
-      updateOrderStatusInSupabase(orderId, newStatus, notes).catch(() => {});
+      updateOrderStatusInSupabase(orderId, newStatus, notes, {
+        ...extras,
+        actorRole: extras?.sellerId ? 'seller' : 'admin',
+      }).catch(() => {});
     }
 
     const titles: Record<OrderStatus, string> = {

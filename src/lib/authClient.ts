@@ -1,16 +1,13 @@
 import { AuthUser, UserRole, IdentityVerificationMethod } from '../types';
+import { supabase } from './supabaseClient';
 
 export interface SendOtpResponse {
   success: boolean;
   providerConfigured: boolean;
   provider?: string;
   code?: string;
-  sandboxMode?: boolean;
   formattedPhone?: string;
   message: string;
-  developerNotice?: string;
-  testOtpCode?: string;
-  challengeToken?: string;
   cooldownSeconds?: number;
   retryAfterSeconds?: number;
   expiresInSeconds?: number;
@@ -20,6 +17,10 @@ export interface SendOtpResponse {
 export interface VerifyOtpResponse {
   success: boolean;
   user?: AuthUser;
+  session?: {
+    access_token: string;
+    refresh_token: string;
+  };
   message?: string;
   error?: string;
   code?: string;
@@ -144,24 +145,34 @@ export async function sendMobileOtp(
 }
 
 /**
- * Verify OTP code
+ * Verify OTP code via Supabase Phone Auth and activate client Supabase RLS session
  */
 export async function verifyMobileOtp(
   phone: string,
   otp: string,
   role: UserRole = 'customer',
   fullName?: string,
-  challengeToken?: string
+  _challengeToken?: string
 ): Promise<VerifyOtpResponse> {
   const result = await safeApiFetchJson<VerifyOtpResponse>('/api/auth/verify-otp', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ phone, otp, role, fullName, challengeToken }),
+    body: JSON.stringify({ phone, otp, role, fullName }),
   });
 
   if (result.data) {
     if (result.data.success && result.ok && result.data.user) {
       setStoredAuthUser(result.data.user);
+      if (supabase && result.data.session?.access_token) {
+        try {
+          await supabase.auth.setSession({
+            access_token: result.data.session.access_token,
+            refresh_token: result.data.session.refresh_token || '',
+          });
+        } catch {
+          // Non-fatal: server API auth still holds user token
+        }
+      }
     }
     return {
       ...result.data,
@@ -177,7 +188,7 @@ export async function verifyMobileOtp(
 }
 
 /**
- * Log out
+ * Log out from MattoKart API and Supabase Auth session
  */
 export async function logoutUser(): Promise<void> {
   const current = getStoredAuthUser();
@@ -191,6 +202,13 @@ export async function logoutUser(): Promise<void> {
       });
     } catch {
       // Ignore network errors on logout
+    }
+  }
+  if (supabase) {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignore signOut errors
     }
   }
   setStoredAuthUser(null);
@@ -458,3 +476,47 @@ export async function checkProductPublishPermission(
   }
   return { allowed: false, error: result.error };
 }
+
+/**
+ * Server-side Admin Order Status & 10-Stage Tracking Sync (Authenticated via Bearer token)
+ */
+export async function adminUpdateOrderStatus(
+  orderId: string,
+  status: string,
+  notes?: string,
+  extras?: { sellerId?: string; courierName?: string; trackingNumber?: string }
+): Promise<{ success: boolean; supabaseSynced?: boolean; message?: string; error?: string }> {
+  const token = getAdminToken();
+  if (!token) {
+    return { success: false, error: 'Administrator session required. Please log in.' };
+  }
+  const result = await safeApiFetchJson<{
+    success: boolean;
+    supabaseSynced?: boolean;
+    message?: string;
+    error?: string;
+  }>(`/api/admin/orders/${encodeURIComponent(orderId)}/status`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      status,
+      notes,
+      sellerId: extras?.sellerId,
+      courierName: extras?.courierName,
+      trackingNumber: extras?.trackingNumber,
+    }),
+  });
+  if (result.data) {
+    return {
+      ...result.data,
+      success: Boolean(result.data.success && result.ok),
+      error: result.data.error || result.error,
+    };
+  }
+  return { success: false, error: result.error };
+}
+

@@ -250,7 +250,9 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
     }
 
     const newAddr: SavedAddress = {
-      id: editingAddrId || `addr-${Date.now()}`,
+      id:
+        editingAddrId ||
+        (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `addr-${Date.now()}`),
       fullName: addrForm.fullName.trim(),
       phone: cleanPhone,
       email: addrForm.email.trim() || undefined,
@@ -345,13 +347,17 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
     }
 
     // Build seller-wise sub-orders (without generating fake courier tracking numbers!)
-    const tempOrderId = `ord-${Date.now()}`;
+    const tempOrderId =
+      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `ord-${Date.now()}`;
     const sellerSubOrders: Omit<SellerSubOrder, 'orderId' | 'createdAt'>[] = quote.sellerQuotes.map(
       (sq, idx) => {
         const method = sq.selectedMethod!;
         const subCodFee = sq.codFee || 0;
         return {
-          id: `subord-${Date.now()}-${idx + 1}`,
+          id:
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `subord-${Date.now()}-${idx + 1}`,
           subOrderNumber: `S${idx + 1}`,
           sellerId: sq.sellerId,
           sellerShopName: sq.sellerShopName,

@@ -11,7 +11,6 @@ import {
   User,
   Info,
   RefreshCw,
-  Sparkles,
 } from 'lucide-react';
 import { AuthUser, UserRole } from '../types';
 import { sendMobileOtp, verifyMobileOtp, SendOtpResponse } from '../lib/authClient';
@@ -107,8 +106,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       phone,
       otp.trim(),
       role,
-      fullName,
-      otpResponse?.challengeToken
+      fullName
     );
     setIsLoading(false);
 
@@ -117,13 +115,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       onClose();
     } else {
       setError(res.error || 'Verification failed. Please check the code.');
-    }
-  };
-
-  const handleFillTestOtp = () => {
-    if (otpResponse?.testOtpCode) {
-      setOtp(otpResponse.testOtpCode);
-      setError(null);
     }
   };
 
@@ -280,35 +271,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <span>{otpResponse?.formattedPhone || `+91 ${phone}`}</span>
                 </div>
 
-                {/* Clear distinction: Live Provider vs Sandbox Test mode */}
-                {otpResponse?.sandboxMode ? (
-                  <div className="mt-2 p-2.5 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Developer Sandbox Mode Active</span>
-                    </div>
-                    <p className="text-[11px] text-amber-800 leading-tight">
-                      SMS Gateway is awaiting live credentials (Twilio/MSG91). For testing the registration flow, use authorized code:
-                    </p>
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="font-mono font-bold text-base bg-white px-2.5 py-0.5 rounded border border-amber-300 text-slate-900 tracking-wider">
-                        {otpResponse.testOtpCode}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleFillTestOtp}
-                        className="text-[11px] font-bold text-amber-900 hover:text-amber-950 underline cursor-pointer"
-                      >
-                        Auto-fill Code
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Live SMS dispatched to your mobile handset</span>
-                  </div>
-                )}
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Live SMS dispatched via MSG91 to your mobile handset</span>
+                </div>
               </div>
 
               <div>

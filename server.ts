@@ -5,11 +5,17 @@ import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import {
   getSmsProviderStatus,
+  getSupabaseServerConfig,
   handleSendOtp,
   handleVerifyOtp,
-  revokeUserToken,
-  verifySignedUserToken,
+  validateIndianPhoneNumber,
+  verifySupabaseAccessToken,
 } from './server/otpService';
+import {
+  syncAdminOrderStatusToSupabase,
+  syncAdminProductDecisionToSupabase,
+  syncAdminSellerDecisionToSupabase,
+} from './server/adminSupabaseActions';
 
 dotenv.config();
 
@@ -30,41 +36,6 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   }
   next(err);
 });
-
-// ============================================================================
-// IN-MEMORY SECURITY STORES & RATE LIMITING
-// ============================================================================
-
-interface RateLimitRecord {
-  attempts: number;
-  lastAttemptAt: number;
-  blockedUntil?: number;
-}
-
-const otpRateLimits = new Map<string, RateLimitRecord>(); // key: phone or ip
-const pendingOtpSessions = new Map<
-  string,
-  {
-    code: string;
-    phone: string;
-    role: 'customer' | 'seller' | 'admin';
-    fullName?: string;
-    expiresAt: number;
-    failedAttempts: number;
-  }
->();
-
-const userSessions = new Map<
-  string,
-  {
-    id: string;
-    phone: string;
-    fullName?: string;
-    role: 'customer' | 'seller' | 'admin';
-    sellerId?: string;
-    createdAt: number;
-  }
->();
 
 // ============================================================================
 // SERVER-SIDE ADMIN AUTHENTICATION & SECURE SESSION STORE
@@ -127,97 +98,7 @@ const verifyAdminAuth = (req: Request, res: Response, next: NextFunction): void 
   next();
 };
 
-// Rate limiter middleware for OTP dispatch
-const checkOtpRateLimit = (req: Request, res: Response, next: NextFunction): void => {
-  const phone = String(req.body.phone || '').trim();
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const key = `${ip}_${phone}`;
-  const now = Date.now();
 
-  const record = otpRateLimits.get(key) || { attempts: 0, lastAttemptAt: 0 };
-
-  if (record.blockedUntil && now < record.blockedUntil) {
-    const waitSecs = Math.ceil((record.blockedUntil - now) / 1000);
-    res.status(429).json({
-      success: false,
-      error: `Too many OTP requests. Please wait ${waitSecs} seconds before retrying.`,
-      retryAfterSeconds: waitSecs,
-    });
-    return;
-  }
-
-  // Minimum 60-second cooldown between resends
-  if (record.lastAttemptAt && now - record.lastAttemptAt < 60 * 1000) {
-    const cooldownLeft = Math.ceil((60 * 1000 - (now - record.lastAttemptAt)) / 1000);
-    res.status(429).json({
-      success: false,
-      error: `Please wait ${cooldownLeft} seconds before requesting a new OTP.`,
-      cooldownSeconds: cooldownLeft,
-    });
-    return;
-  }
-
-  // Max 4 requests in a 10-minute window
-  if (record.attempts >= 4) {
-    record.blockedUntil = now + 10 * 60 * 1000;
-    otpRateLimits.set(key, record);
-    res.status(429).json({
-      success: false,
-      error: 'OTP limit reached (max 4 per 10 minutes). Please try again later.',
-      retryAfterSeconds: 600,
-    });
-    return;
-  }
-
-  record.attempts += 1;
-  record.lastAttemptAt = now;
-  otpRateLimits.set(key, record);
-  next();
-};
-
-// ============================================================================
-// HELPER: INDIAN PHONE NUMBER NORMALIZATION & VALIDATION
-// ============================================================================
-function validateIndianPhoneNumber(rawPhone: string): { isValid: boolean; formatted: string; cleanDigits: string; error?: string } {
-  if (!rawPhone) {
-    return { isValid: false, formatted: '', cleanDigits: '', error: 'Mobile number is required' };
-  }
-
-  // Strip spaces, dashes, parentheses
-  let digits = rawPhone.replace(/\D/g, '');
-
-  // Handle leading 0 or 91
-  if (digits.startsWith('91') && digits.length === 12) {
-    digits = digits.slice(2);
-  } else if (digits.startsWith('0') && digits.length === 11) {
-    digits = digits.slice(1);
-  }
-
-  // Indian numbers must be exactly 10 digits and start with 6, 7, 8, or 9
-  if (digits.length !== 10) {
-    return {
-      isValid: false,
-      formatted: '',
-      cleanDigits: digits,
-      error: 'Please enter a valid 10-digit Indian mobile number (e.g. 98970 12345)',
-    };
-  }
-
-  if (!/^[6-9]/.test(digits)) {
-    return {
-      isValid: false,
-      formatted: '',
-      cleanDigits: digits,
-      error: 'Valid Indian mobile numbers must begin with 6, 7, 8, or 9',
-    };
-  }
-
-  return {
-    isValid: true,
-    formatted: `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`,
-    cleanDigits: digits,
-  };
-}
 
 // ============================================================================
 // API ROUTES: AUTHENTICATION & MOBILE OTP
@@ -243,7 +124,7 @@ app.post('/api/auth/send-otp', async (req: Request, res: Response) => {
   }
 });
 
-// 2. Verify OTP
+// 2. Verify OTP (Supabase Phone Auth)
 app.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
   try {
     const result = await handleVerifyOtp({
@@ -251,7 +132,6 @@ app.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
       otp: req.body?.otp,
       role: req.body?.role,
       fullName: req.body?.fullName,
-      challengeToken: req.body?.challengeToken,
     });
     res.status(result.httpStatus).json(result.body);
   } catch (err: any) {
@@ -262,23 +142,35 @@ app.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
   }
 });
 
-// 3. Current User Profile
-app.get('/api/auth/me', (req: Request, res: Response) => {
-  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim() || '';
-  const user = verifySignedUserToken(token);
-  if (!user) {
-    res.status(401).json({ success: false, error: 'Unauthorized: No active session' });
-    return;
-  }
+// 3. Current User Profile (Verified against Supabase Auth)
+app.get('/api/auth/me', async (req: Request, res: Response) => {
+  try {
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim() || '';
+    const user = await verifySupabaseAccessToken(token);
+    if (!user) {
+      res.status(401).json({ success: false, error: 'Unauthorized: No active session' });
+      return;
+    }
 
-  res.json({ success: true, user });
+    res.json({ success: true, user });
+  } catch {
+    res.status(401).json({ success: false, error: 'Unauthorized: Session verification failed' });
+  }
 });
 
-// 4. Logout
-app.post('/api/auth/logout', (req: Request, res: Response) => {
+// 4. Logout (Revoke Supabase session)
+app.post('/api/auth/logout', async (req: Request, res: Response) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim();
-  if (token) {
-    revokeUserToken(token);
+  const supa = getSupabaseServerConfig();
+  const supaKey = supa.anonKey || supa.serviceRoleKey;
+  if (token && supa.url && supaKey) {
+    await fetch(`${supa.url}/auth/v1/logout`, {
+      method: 'POST',
+      headers: {
+        apikey: supaKey,
+        Authorization: `Bearer ${token}`,
+      },
+    }).catch(() => {});
   }
   res.json({ success: true, message: 'Logged out successfully' });
 });
@@ -463,10 +355,16 @@ app.get('/api/admin/session', (req: Request, res: Response) => {
   res.json({ authenticated: true, role: 'admin' });
 });
 
-// 4. Approve Seller (Protected by server-side Bearer session token)
-app.post('/api/admin/sellers/:id/approve', verifyAdminAuth, (req: Request, res: Response) => {
+// 4. Approve Seller (Protected by server-side Bearer session token + persisted to Supabase)
+app.post('/api/admin/sellers/:id/approve', verifyAdminAuth, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { adminNotes } = req.body;
+
+  await syncAdminSellerDecisionToSupabase({
+    sellerId: id,
+    action: 'approve',
+    adminNotes,
+  });
 
   res.json({
     success: true,
@@ -480,10 +378,16 @@ app.post('/api/admin/sellers/:id/approve', verifyAdminAuth, (req: Request, res: 
   });
 });
 
-// Reject Seller (Protected by server-side admin key check)
-app.post('/api/admin/sellers/:id/reject', verifyAdminAuth, (req: Request, res: Response) => {
+// Reject Seller (Protected by server-side admin key check + persisted to Supabase)
+app.post('/api/admin/sellers/:id/reject', verifyAdminAuth, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { reason = 'Incomplete business credentials or address mismatch' } = req.body;
+
+  await syncAdminSellerDecisionToSupabase({
+    sellerId: id,
+    action: 'reject',
+    reason,
+  });
 
   res.json({
     success: true,
@@ -497,9 +401,13 @@ app.post('/api/admin/sellers/:id/reject', verifyAdminAuth, (req: Request, res: R
   });
 });
 
-// Moderate / Approve Product (Protected by server-side admin key check)
-app.post('/api/admin/products/:id/approve', verifyAdminAuth, (req: Request, res: Response) => {
+// Moderate / Approve Product (Protected by server-side admin key check + persisted to Supabase)
+app.post('/api/admin/products/:id/approve', verifyAdminAuth, async (req: Request, res: Response) => {
   const { id } = req.params;
+  await syncAdminProductDecisionToSupabase({
+    productId: id,
+    action: 'approve',
+  });
   res.json({
     success: true,
     productId: id,
@@ -509,10 +417,15 @@ app.post('/api/admin/products/:id/approve', verifyAdminAuth, (req: Request, res:
   });
 });
 
-// Reject Product Listing (Protected by server-side admin key check)
-app.post('/api/admin/products/:id/reject', verifyAdminAuth, (req: Request, res: Response) => {
+// Reject Product Listing (Protected by server-side admin key check + persisted to Supabase)
+app.post('/api/admin/products/:id/reject', verifyAdminAuth, async (req: Request, res: Response) => {
   const { id } = req.params;
   const { reason = 'Listing does not comply with Saharanpur marketplace standards' } = req.body;
+  await syncAdminProductDecisionToSupabase({
+    productId: id,
+    action: 'reject',
+    reason,
+  });
   res.json({
     success: true,
     productId: id,
@@ -522,6 +435,53 @@ app.post('/api/admin/products/:id/reject', verifyAdminAuth, (req: Request, res: 
     message: 'Product rejected.',
   });
 });
+
+// Admin Order Status & 10-Stage Tracking Sync (Protected by server-side admin Bearer token)
+const handleAdminOrderStatusUpdate = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { status, sellerId, courierName, trackingNumber, notes } = req.body || {};
+
+  if (!status) {
+    res.status(400).json({ success: false, error: 'Order status is required.' });
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  const existingOrder = serverOrders.get(id);
+  if (existingOrder) {
+    existingOrder.orderStatus = status;
+    if (courierName) existingOrder.courierPartner = String(courierName).trim();
+    if (trackingNumber) existingOrder.trackingNumber = String(trackingNumber).trim();
+    if (status === 'delivered') existingOrder.paymentStatus = 'completed';
+    if (status === 'refunded') existingOrder.paymentStatus = 'refunded';
+    if (notes) {
+      existingOrder.notes = existingOrder.notes ? `${existingOrder.notes} | ${String(notes).trim()}` : String(notes).trim();
+    }
+    existingOrder.updatedAt = nowIso;
+    serverOrders.set(id, existingOrder);
+  }
+
+  const syncRes = await syncAdminOrderStatusToSupabase({
+    orderId: id,
+    status: String(status),
+    sellerId: sellerId ? String(sellerId) : undefined,
+    courierName: courierName ? String(courierName) : undefined,
+    trackingNumber: trackingNumber ? String(trackingNumber) : undefined,
+    notes: notes ? String(notes) : undefined,
+  });
+
+  res.json({
+    success: true,
+    orderId: id,
+    status,
+    supabaseSynced: syncRes.synced,
+    updatedAt: nowIso,
+    message: `Admin updated order status to ${status}.`,
+  });
+};
+
+app.patch('/api/admin/orders/:id/status', verifyAdminAuth, handleAdminOrderStatusUpdate);
+app.post('/api/admin/orders/:id/status', verifyAdminAuth, handleAdminOrderStatusUpdate);
 
 // ============================================================================
 // API ROUTES: PRODUCT LISTING PERMISSIONS ENFORCEMENT
@@ -1369,10 +1329,8 @@ app.post('/api/orders/:id/return', (req: Request, res: Response) => {
 
 // System Status Endpoint
 app.get('/api/system/status', (_req: Request, res: Response) => {
-  const hasSupabase = Boolean(
-    (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL) &&
-      (process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY)
-  );
+  const supa = getSupabaseServerConfig();
+  const hasSupabase = Boolean(supa.url && (supa.anonKey || supa.serviceRoleKey));
   const smsStatus = getSmsProviderStatus();
   const hasKyc = Boolean(process.env.DIGILOCKER_CLIENT_ID || process.env.KYC_PROVIDER_API_KEY);
   const hasRazorpay = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
@@ -1385,7 +1343,8 @@ app.get('/api/system/status', (_req: Request, res: Response) => {
     integrations: {
       supabaseDatabase: {
         configured: hasSupabase,
-        note: hasSupabase ? 'Active' : 'Awaiting VITE_SUPABASE_URL in .env',
+        serviceRoleConfigured: Boolean(supa.serviceRoleKey),
+        note: hasSupabase ? 'Active' : 'Awaiting SUPABASE_URL / VITE_SUPABASE_URL in .env',
       },
       stageBCheckoutCodTracking: {
         configured: true,
@@ -1403,8 +1362,8 @@ app.get('/api/system/status', (_req: Request, res: Response) => {
         configured: smsStatus.anyConfigured,
         provider: smsStatus.providerLabel,
         note: smsStatus.anyConfigured
-          ? `Live Indian SMS configured (${smsStatus.providerLabel})`
-          : 'Awaiting SMS credentials (TWILIO_*, MSG91_*, or Supabase Phone Auth)',
+          ? 'Supabase Phone Auth active (dispatching via send-sms-msg91 Edge Function Hook)'
+          : 'Not configured (Set SUPABASE_URL, key, and enable Phone Auth + send-sms-msg91 Hook)',
       },
       identityKycProvider: {
         configured: hasKyc,

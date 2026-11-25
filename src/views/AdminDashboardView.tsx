@@ -47,6 +47,7 @@ import {
   adminRejectSeller,
   adminApproveProduct,
   adminRejectProduct,
+  adminUpdateOrderStatus,
   adminLogin,
   adminLogout,
   checkAdminSession,
@@ -745,6 +746,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   const handleStatusChange = async (newStatus: OrderStatus) => {
                     setAdminUpdatingOrderId(order.id);
                     try {
+                      await adminUpdateOrderStatus(
+                        order.id,
+                        newStatus,
+                        'Admin status override from MattoKart control center'
+                      ).catch(() => {});
                       if (onAdminUpdateOrderStatus) {
                         await onAdminUpdateOrderStatus(order.id, newStatus, 'Admin status override from MattoKart control center');
                       }

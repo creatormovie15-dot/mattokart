@@ -64,8 +64,6 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
   const [otpInput, setOtpInput] = useState('');
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [otpLoading, setOtpLoading] = useState(false);
-  const [testOtpCode, setTestOtpCode] = useState<string | null>(null);
-  const [otpChallengeToken, setOtpChallengeToken] = useState<string | undefined>(undefined);
   const [email, setEmail] = useState('');
 
   // Step 2: All-India Address & Shipping Coverage
@@ -143,10 +141,6 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
 
     if (res.success) {
       setIsOtpSent(true);
-      setOtpChallengeToken(res.challengeToken);
-      if (res.testOtpCode) {
-        setTestOtpCode(res.testOtpCode);
-      }
     } else {
       setErrors({ phone: res.error || res.message || 'Failed to dispatch OTP.' });
     }
@@ -160,7 +154,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
     }
     setOtpLoading(true);
     setErrors({});
-    const res = await verifyMobileOtp(phone, otpInput.trim(), 'seller', ownerName, otpChallengeToken);
+    const res = await verifyMobileOtp(phone, otpInput.trim(), 'seller', ownerName);
     setOtpLoading(false);
 
     if (res.success) {
@@ -592,12 +586,7 @@ export const SellerRegisterView: React.FC<SellerRegisterViewProps> = ({
                     {isOtpSent && !isPhoneOtpVerified && (
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2 animate-in fade-in">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-amber-900 font-semibold">Enter 6-digit OTP code:</span>
-                          {testOtpCode && (
-                            <span className="text-[11px] bg-white px-2 py-0.5 rounded border border-amber-300 text-slate-800 font-mono">
-                              Test Code: <strong>{testOtpCode}</strong>
-                            </span>
-                          )}
+                          <span className="text-amber-900 font-semibold">Enter 6-digit OTP code sent via SMS:</span>
                         </div>
                         <div className="flex gap-2">
                           <input
